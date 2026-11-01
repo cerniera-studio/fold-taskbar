@@ -79,6 +79,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     @Volatile private var onScreenLeft: Map<String, Int> = emptyMap()
     @Volatile private var onScreenBounds: Map<String, Rect> = emptyMap()
     @Volatile private var keyboardTop: Int? = null
+    /** Set when the bar is called back while a keyboard is up: the call wins until a keyboard next comes up. */
+    @Volatile private var keyboardOverride = false
     @Volatile private var systemInFront = false
     @Volatile private var systemTitle: String? = null
     private var hidePackages: Set<String> = emptySet()
@@ -177,9 +179,11 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                 Prefs.autoHide(this) && !revealed -> "auto-hide"
                 receded -> "receding"
                 !barOn -> "hidden (${hideReason()})"
+                keyboardTop != null -> "beside the keyboard"
                 else -> "already in view"
             }
             if (Prefs.collapsed(this) != null) expand()
+            if (keyboardTop != null) keyboardOverride = true
             returnFromRecede(gentle = false)
             if (Prefs.autoHide(this)) { revealed = true; scheduleAutoHide() }
             layoutKey = ""
@@ -390,7 +394,16 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val r = Rect()
         for (w in list) {
             when (w.type) {
-                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> { w.getBoundsInScreen(r); imeTop = r.top }
+                // 1 Nov 2026, the bar vanished in an app and did not come back, even from the
+                // Quick Settings tile, after SwiftKey was closed. A keyboard can leave its window
+                // listed when it is down (a toolbar strip, or nothing showing), and the bar went on
+                // stepping aside for it. Now only a keyboard actually up counts: tall enough to be
+                // keys, showing something, and not parked at the screen's foot
+                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> {
+                    w.getBoundsInScreen(r)
+                    val showing = runCatching { w.root?.isVisibleToUser }.getOrNull() != false
+                    if (showing && r.height() >= dp(120) && r.top < liveBounds().bottom - dp(48)) imeTop = r.top
+                }
                 // 30 Oct 2026, the log showed the bar hidden for "a system panel" on the home
                 // screen and after unlocking or unfolding. Any focused system window counted,
                 // including small ones One UI focuses in passing. Now only a panel that covers a
@@ -415,6 +428,12 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     w.getBoundsInScreen(r); lefts[pkg] = r.left; boxes[pkg] = Rect(r)
                 }
             }
+        }
+        if ((imeTop == null) != (keyboardTop == null)) {
+            // A keyboard coming up afresh ends any call-back that overrode the last one
+            if (imeTop != null) keyboardOverride = false
+            val up = imeTop != null
+            main.post { EventLog.add(this, if (up) "Keyboard up: the bar steps aside if it would cover it" else "Keyboard down") }
         }
         keyboardTop = imeTop
         systemInFront = system
@@ -667,7 +686,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     private fun hostWanted(i: Int): Boolean {
         if (!barOn || Prefs.collapsed(this) != null) return false
         if (Prefs.autoHide(this) && !revealed && !drawer.isOpen && menuWindow == null && !hubInFull()) return false
-        // The keyboard only pushes aside a capsule it would actually cover
+        // The keyboard only pushes aside a capsule it would actually cover, and never one just called back
+        if (keyboardOverride) return true
         val top = keyboardTop ?: return true
         val lp = hosts[i].layoutParams as? WindowManager.LayoutParams ?: return true
         return lp.y + hosts[i].height - dp(10) <= top
