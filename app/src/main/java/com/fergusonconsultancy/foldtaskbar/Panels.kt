@@ -25,11 +25,19 @@ import kotlin.math.hypot
 
 /** The small menu that opens when you hold an app in the bar or the drawer. */
 @SuppressLint("ViewConstructor")
+/**
+ * A choice the menu shares with settings (1 Nov 2026): the same heading and the same words, in
+ * the same order, with the current one marked, so the menu and settings never disagree.
+ */
+class MenuChoice(val heading: String, val options: List<String>, val selected: Int, val pick: (Int) -> Unit)
+
 class ActionMenu(
     context: Context,
     finish: Finish,
     title: String,
     rows: List<Pair<String, () -> Unit>>,
+    choice: MenuChoice? = null,
+    after: List<Pair<String, () -> Unit>> = emptyList(),
 ) : LinearLayout(context) {
     init {
         orientation = VERTICAL
@@ -46,16 +54,42 @@ class ActionMenu(
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
-        rows.forEach { (label, action) ->
+        fun row(label: String, marked: Boolean = false, action: () -> Unit) = addView(TextView(context).apply {
+            text = label
+            textSize = 16f
+            setTextColor(if (marked) finish.indicator else finish.ink)
+            minHeight = context.dp(44)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(context.dp(14), 0, context.dp(20), 0)
+            if (marked) {
+                // The current choice: in the finish's light, with a small disc after it
+                val d = context.dp(6)
+                val dot = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(finish.indicator); setSize(d, d)
+                }
+                setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, dot, null)
+                compoundDrawablePadding = context.dp(12)
+            }
+            setOnClickListener { it.tick(); action() }
+        })
+        fun rule() = addView(android.view.View(context).apply { setBackgroundColor((finish.ink and 0x00FFFFFF) or 0x24000000) },
+            LayoutParams(-1, maxOf(1, context.dp(1) / 2)).apply { setMargins(context.dp(14), context.dp(4), context.dp(14), context.dp(4)) })
+        rows.forEach { (label, action) -> row(label, action = action) }
+        if (choice != null) {
+            if (rows.isNotEmpty()) rule()
             addView(TextView(context).apply {
-                text = label
-                textSize = 16f
+                text = choice.heading.uppercase()
+                textSize = 11f
+                letterSpacing = 0.14f
                 setTextColor(finish.ink)
-                minHeight = context.dp(44)
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(context.dp(14), 0, context.dp(20), 0)
-                setOnClickListener { it.tick(); action() }
+                alpha = 0.6f
+                setPadding(context.dp(14), context.dp(6), context.dp(14), context.dp(2))
             })
+            choice.options.forEachIndexed { i, label -> row(label, marked = i == choice.selected) { choice.pick(i) } }
+        }
+        if (after.isNotEmpty()) {
+            if (choice != null || rows.isNotEmpty()) rule()
+            after.forEach { (label, action) -> row(label, action = action) }
         }
     }
 }

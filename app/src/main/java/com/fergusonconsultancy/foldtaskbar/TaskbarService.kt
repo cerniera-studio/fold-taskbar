@@ -1751,14 +1751,19 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun onAllAppsHeld(view: View) {
         closePanels()
         (view as? GlyphView)?.animateOpen(0f, Curves.CLOSE_MS, Curves.CLOSE)
-        val auto = Prefs.autoHide(this)
-        showMenu("Taskbar", listOf(
-            *(splitPair()?.let { (l, r) ->
-                arrayOf("Save ${apps.entry(l)?.label} + ${apps.entry(r)?.label} as a pair" to {
-                    closeMenu(); Prefs.addPair(this, l, r)
-                    EventLog.add(this, "Pair saved from the screen: ${apps.entry(l)?.label} + ${apps.entry(r)?.label}")
-                })
-            } ?: emptyArray()),
+        // The menu and settings say the same thing (1 Nov 2026): the In apps choice here is the
+        // In apps choice in settings, same words, same order, the current one marked
+        val presences = Presence.entries
+        val pairRow = splitPair()?.let { (l, r) ->
+            listOf("Save ${apps.entry(l)?.label} + ${apps.entry(r)?.label} as a pair" to {
+                closeMenu(); Prefs.addPair(this, l, r)
+                EventLog.add(this, "Pair saved from the screen: ${apps.entry(l)?.label} + ${apps.entry(r)?.label}")
+            })
+        } ?: emptyList()
+        showMenu("Taskbar", pairRow, view, MenuChoice("In apps", presences.map { it.label }, presences.indexOf(Prefs.presence(this))) {
+            closeMenu(); revealed = false; Prefs.setPresence(this, presences[it])
+            EventLog.add(this, "In apps set from the bar's menu: ${presences[it].label}")
+        }, listOf(
             "Collapse to a tab" to {
                 closeMenu()
                 hosts.firstOrNull()?.let { host ->
@@ -1771,14 +1776,11 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     collapseTo(edge, along.coerceIn(0.08f, 0.92f))
                 }
             },
-            (if (auto) "Keep the taskbar showing" else "Auto-hide the taskbar") to {
-                closeMenu(); Prefs.setAutoHide(this, !auto); revealed = false
-            },
             "Taskbar settings" to {
                 closeMenu()
                 startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             },
-        ), view)
+        ))
     }
 
     /** The two apps currently sharing the screen, left first, if there are two. */
@@ -2370,9 +2372,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         showMenu(label, rows, anchor)
     }
 
-    private fun showMenu(title: String, rows: List<Pair<String, () -> Unit>>, anchor: View) {
+    private fun showMenu(title: String, rows: List<Pair<String, () -> Unit>>, anchor: View,
+                         choice: MenuChoice? = null, after: List<Pair<String, () -> Unit>> = emptyList()) {
         closeMenu()
-        val menu = ActionMenu(this, Prefs.finish(this), title, rows)
+        val menu = ActionMenu(this, Prefs.finish(this), title, rows, choice, after)
         val host = outsideCloses(shadowHost(menu)) { closeMenu() }
         host.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val loc = IntArray(2).also { anchor.getLocationOnScreen(it) }
