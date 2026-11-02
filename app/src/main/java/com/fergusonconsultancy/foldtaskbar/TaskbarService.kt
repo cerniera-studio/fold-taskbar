@@ -727,6 +727,11 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             hosts.forEach { Tuning.cancel(it); it.animate().cancel(); it.visibility = View.GONE }
             return
         }
+        // 2 Nov 2026: this line went missing on 25 Oct with the entrance above, so the bar only
+        // ever switched itself back on when Fold Motion covered an unfold. Unlocking with the
+        // phone open, or unfolding onto the lock screen, left it off, calls included, until
+        // the next fold and unfold
+        barOn = on
         entering = on && arriving
         if (entering) { arriving = false; showOnUnfold() }
         hosts.forEachIndexed { i, host ->
