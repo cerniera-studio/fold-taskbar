@@ -83,6 +83,13 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     @Volatile private var keyboardOverride = false
     @Volatile private var systemInFront = false
     @Volatile private var systemTitle: String? = null
+    /**
+     * 2 Nov 2026, the log showed the bar hidden for "a system panel (untitled)" until it was called
+     * back from the Quick Settings tile, twice in three minutes. A call-back is the owner saying
+     * nothing is in front that matters: that panel is ignored for as long as it stays listed.
+     */
+    @Volatile private var systemId = -1
+    @Volatile private var ignoredSystemId = -1
     private var hidePackages: Set<String> = emptySet()
     /** The home apps (launchers). The bar belongs here more than anywhere. */
     @Volatile private var homes: Set<String> = emptySet()
@@ -184,6 +191,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             }
             if (Prefs.collapsed(this) != null) expand()
             if (keyboardTop != null) keyboardOverride = true
+            if (systemInFront) { ignoredSystemId = systemId; systemInFront = false }
             returnFromRecede(gentle = false)
             if (Prefs.autoHide(this)) { revealed = true; scheduleAutoHide() }
             layoutKey = ""
@@ -391,6 +399,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         var imeTop: Int? = null
         var system = false
         var unreadableFront = false
+        var seenIgnored = false
         val r = Rect()
         for (w in list) {
             when (w.type) {
@@ -408,13 +417,16 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                 // screen and after unlocking or unfolding. Any focused system window counted,
                 // including small ones One UI focuses in passing. Now only a panel that covers a
                 // real part of the screen (the shade, Quick Settings, the power menu) puts the bar aside.
-                AccessibilityWindowInfo.TYPE_SYSTEM -> if (w.isFocused) {
+                AccessibilityWindowInfo.TYPE_SYSTEM -> if (w.isFocused && w.id == ignoredSystemId) seenIgnored = true else if (w.isFocused) {
                     w.getBoundsInScreen(r)
                     val screenArea = (liveBounds().width().toLong() * liveBounds().height()).coerceAtLeast(1)
                     // ...and only one actually showing something. One UI can leave the lock
                     // screen's full-screen window focused but empty after unlocking
                     val showing = runCatching { w.root?.let { it.isVisibleToUser && it.childCount > 0 } }.getOrNull() ?: false
-                    if (showing && r.width().toLong() * r.height() * 4 >= screenArea) { system = true; systemTitle = w.title?.toString() }
+                    if (showing && r.width().toLong() * r.height() * 4 >= screenArea) {
+                        system = true; systemId = w.id
+                        systemTitle = "${w.title ?: "untitled"}, ${r.toShortString()}"
+                    }
                 }
                 AccessibilityWindowInfo.TYPE_APPLICATION -> {
                     // Some windows, launchers among them, will not give up their contents. For the
@@ -433,10 +445,14 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             // A keyboard coming up afresh ends any call-back that overrode the last one
             if (imeTop != null) keyboardOverride = false
             val up = imeTop != null
-            main.post { EventLog.add(this, if (up) "Keyboard up: the bar steps aside if it would cover it" else "Keyboard down") }
+            main.post {
+                EventLog.add(this, if (up) "Keyboard up: the bar waits as a tab if it would cover it" else "Keyboard down")
+                hosts.indices.forEach(::place)
+            }
         }
         keyboardTop = imeTop
         systemInFront = system
+        if (!seenIgnored) ignoredSystemId = -1
         // An empty list is a transition in progress, not a real state. Keep the last one.
         // Nothing readable in front, and nothing seen yet: it is almost always the home screen,
         // which used to leave the bar hidden until the first app was opened
@@ -677,9 +693,18 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val collapsed = Prefs.collapsed(this)
         val panelsOpen = drawer.isOpen || menuWindow != null
         val autoHidden = collapsed == null && Prefs.autoHide(this) && !revealed && !panelsOpen && !hubInFull()
-        if (collapsed != null) showTab(collapsed) else removeTab()
+        // While a keyboard is up and would cover the bar, the bar steps aside but never vanishes:
+        // it waits as a tab on the right edge, clear of the text field above the keyboard, and a
+        // tap brings it back above the keys (2 Nov 2026)
+        if (collapsed != null) showTab(collapsed) else if (keyboardHidesBar()) showTab(KEYBOARD_TAB) else removeTab()
         if (autoHidden) showStrips() else removeStrips()
         setBarOn(true)
+    }
+
+    private fun keyboardHidesBar(): Boolean {
+        val top = keyboardTop ?: return false
+        if (keyboardOverride || !barOn) return false
+        return hosts.any { h -> (h.layoutParams as? WindowManager.LayoutParams)?.let { it.y + h.height - dp(10) > top } ?: false }
     }
 
     /** Whether one capsule should be on screen right now. */
@@ -883,7 +908,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val (w, h) = hostSize(host)
         val pad = dp(10)
         val x = (spot.fx * s.width() - w / 2f).toInt().coerceIn(-pad, s.width() - w + pad)
-        val y = (spot.fy * s.height() - h / 2f).toInt().coerceIn(statusInset() - pad, s.height() - h + pad)
+        var y = (spot.fy * s.height() - h / 2f).toInt().coerceIn(statusInset() - pad, s.height() - h + pad)
+        // Called back over a keyboard: it sits on the keyboard's top edge, not over the keys
+        val kb = keyboardTop
+        if (keyboardOverride && kb != null && y + h - pad > kb) y = (kb - h + pad).coerceAtLeast(statusInset() - pad)
         if (lp.x != x || lp.y != y) {
             lp.x = x; lp.y = y
             runCatching { wm.updateViewLayout(host, lp) }
@@ -1110,13 +1138,18 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
                     val s = screen()
                     val upright = c.first == 'L' || c.first == 'R'
-                    if (moved) {
+                    val transient = Prefs.collapsed(this) == null
+                    if (moved && !transient) {
                         val along = if (upright) (lp.y + v.height / 2f) / s.height() else (lp.x + v.width / 2f) / s.width()
                         Prefs.setCollapsed(this, c.first to along)
                         sampleSoon(120)
-                    } else if (e.actionMasked == MotionEvent.ACTION_UP) {
+                    } else if (!moved && e.actionMasked == MotionEvent.ACTION_UP) {
                         v.tick()
-                        expand()
+                        if (transient) {
+                            keyboardOverride = true
+                            EventLog.add(this, "Called back from beside the keyboard (tab)")
+                            removeTab(); apply()
+                        } else expand()
                     }
                 }
             }
@@ -1128,6 +1161,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             .setDuration(Curves.OPEN_MS).setInterpolator(Curves.OPEN).start()
         sampleSoon(120)
     }
+
+    private val KEYBOARD_TAB = 'R' to 0.4f
 
     private fun removeTab() {
         remove(tab); tab = null
