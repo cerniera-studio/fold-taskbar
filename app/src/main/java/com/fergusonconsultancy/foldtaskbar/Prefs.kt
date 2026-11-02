@@ -118,6 +118,15 @@ fun lightOver(lum: Float, was: Boolean?): Boolean = when {
 enum class Presence(val label: String) { ALWAYS("Always"), HIDE("Hide"), RECEDE("Recede"), TRIM("Trim") }
 
 /**
+ * Show on unfold (2 Nov 2026). A bar out of sight is only found by remembering where it was,
+ * and after a night folded nobody remembers. So for Hide and Trim, every unfold (and every
+ * unlock with the phone open) shows where the bar lives, then lets it rest again. Full bar
+ * makes the usual entrance and holds it for a few seconds; Peek lights only the active-app pill
+ * where the bar sits. No timer: it happens every time, so it is always predictable.
+ */
+enum class UnfoldShow(val label: String) { FULL("Full bar"), PEEK("Peek"), OFF("Off") }
+
+/**
  * The bar's profile (25 Oct 2026). Round: the capsule, ends fully rounded. Slim: a lower, flatter
  * slab with tighter corners, Bauhaus in its restraint, giving the screen back a few points.
  */
@@ -251,6 +260,11 @@ object Prefs {
     fun homeInFull(c: Context) = of(c).getBoolean("home_in_full", true)
     fun setHomeInFull(c: Context, v: Boolean) = of(c).edit().putBoolean("home_in_full", v).apply()
     fun setPresence(c: Context, v: Presence) = of(c).edit().putString("presence", v.name).apply()
+
+    /** Show on unfold: only Hide and Trim take the bar out of full view, so only they use it. */
+    fun unfoldShow(c: Context) = runCatching { UnfoldShow.valueOf(of(c).getString("unfold_show", null)!!) }.getOrDefault(UnfoldShow.FULL)
+    fun setUnfoldShow(c: Context, v: UnfoldShow) = of(c).edit().putString("unfold_show", v.name).apply()
+    fun unfoldShowApplies(c: Context) = presence(c).let { it == Presence.HIDE || it == Presence.TRIM }
 
     /**
      * Recede (30 Oct 2026): how long the bar stays in full after you last used it, or after an

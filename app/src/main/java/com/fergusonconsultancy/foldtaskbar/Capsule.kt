@@ -404,6 +404,9 @@ class Capsule(
             (frame.left + v.right).toFloat(), (frame.top + v.bottom).toFloat())
     }
 
+    /** Where the active-app pill sits in this capsule, in its own coordinates, if laid out. */
+    fun activeMark(): RectF? = if (width == 0) null else lights.firstOrNull { it.to != null }?.to?.let { RectF(it) }
+
     fun setActive(active: Set<String>) {
         val want = indicators.keys.filter { it in active }
         val have = lights.filter { it.to != null }.map { it.key }

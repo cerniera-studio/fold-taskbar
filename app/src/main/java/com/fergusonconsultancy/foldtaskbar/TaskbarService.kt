@@ -526,6 +526,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         guide.end()
         removeStrips()
         removeTab()
+        removePeeks()
         revealed = false
     }
 
@@ -727,7 +728,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             return
         }
         entering = on && arriving
-        if (entering) arriving = false
+        if (entering) { arriving = false; showOnUnfold() }
         hosts.forEachIndexed { i, host ->
             val want = hostWanted(i)
             if (want && host.visibility != View.VISIBLE) place(i)
@@ -736,6 +737,74 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         entering = false
         if (!on) closePanels()
     }
+
+    // ---- Show on unfold (2 Nov 2026) ----------------------------------------------------
+    // Hide and Trim keep the bar out of full view, and after a night folded nobody remembers
+    // where it was left. So every arrival (an unfold, or an unlock with the phone open) shows
+    // where it lives, then lets it rest again. No timer: it happens every time.
+
+    private val peeks = mutableListOf<PeekLight>()
+
+    private fun showOnUnfold() {
+        if (!Prefs.unfoldShowApplies(this) || hubInFull() || Prefs.collapsed(this) != null) return
+        val mode = Prefs.unfoldShow(this)
+        if (mode == UnfoldShow.OFF) return
+        val hold = ENTRANCE_MS + UNFOLD_HOLD_MS
+        val presence = Prefs.presence(this)
+        if (mode == UnfoldShow.FULL) {
+            if (presence == Presence.HIDE) {
+                // Called up as if by a swipe, but held for the unfold's own time, whatever the
+                // holding time is set to. A touch on the bar keeps it, as any call would
+                revealed = true
+                // The strips only call a hidden bar; over a shown one they would take its touches
+                removeStrips()
+                main.removeCallbacks(autoHideNow)
+                main.postDelayed(autoHideNow, hold)
+            } else {
+                capsules.forEach { it.setResting(false) }
+                main.removeCallbacks(restNow)
+                main.postDelayed(restNow, hold)
+            }
+            EventLog.add(this, "Shown on unfold: full bar")
+        } else {
+            // Peek: the bar stays as it is; once it has its place, only the pill lights there
+            main.postDelayed({ peek() }, 60)
+            EventLog.add(this, "Shown on unfold: peek")
+        }
+    }
+
+    private fun peek() {
+        removePeeks()
+        if (!barOn || !isMainScreen() || locked()) return
+        val box = dp(PeekLight.PEEK_BOX_DP)
+        hosts.indices.forEach { i ->
+            val host = hosts[i]
+            place(i)
+            val lp = host.layoutParams as? WindowManager.LayoutParams ?: return@forEach
+            host.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val w = host.measuredWidth.takeIf { it > 0 } ?: host.width
+            val h = host.measuredHeight.takeIf { it > 0 } ?: host.height
+            if (w <= 0 || h <= 0) return@forEach
+            val capsule = capsules.getOrNull(i)
+            // On the active app's own pill when the capsule knows where it is; else the bar's middle
+            val mark = capsule?.activeMark()
+            val (cx, cy) = if (mark != null && capsule != null && capsule.width > 0)
+                (lp.x + capsule.left + mark.centerX()) to (lp.y + capsule.top + mark.centerY())
+            else (lp.x + w / 2f) to (lp.y + h / 2f)
+            val (vertical, nearStart) = restingEdge(host)
+            val tx = if (vertical) (if (nearStart) -1f else 1f) else 0f
+            val ty = if (!vertical) (if (nearStart) -1f else 1f) else 0f
+            val light = PeekLight(this, vertical, tx, ty)
+            val p = params(Gravity.TOP or Gravity.START, (cx - box / 2f).toInt(), (cy - box / 2f).toInt(), w = box, h = box).apply {
+                flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
+            add(light, p)
+            peeks += light
+            light.play { remove(light); peeks.remove(light) }
+        }
+    }
+
+    private fun removePeeks() { peeks.forEach { it.cancel(); remove(it) }; peeks.clear() }
 
     /** Whether the bar at [host] stands at a side, and whether it rests against the top or left edge. */
     private fun restingEdge(host: BarHost): Pair<Boolean, Boolean> {
@@ -1458,6 +1527,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     private fun reveal() {
+        removePeeks()
         revealed = true
         apply()
         scheduleAutoHide()
@@ -1466,6 +1536,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Any touch on the bar keeps it up for a few more seconds. */
     private fun onBarTouched() {
         markUsed()
+        removePeeks()
         returnFromRecede(gentle = false)
         if (Prefs.autoHide(this) && revealed) scheduleAutoHide()
         scheduleRest()
@@ -1493,7 +1564,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             val pad = dp(10)
             val r = Rect(lp.x + pad, lp.y + pad, lp.x + w - pad, lp.y + h - pad)
             val (vertical, nearStart) = restingEdge(host)
-            val reach = dp(20); val inward = dp(16); val edgeSafe = dp(24)
+            val reach = dp(20); val inward = dp(24); val edgeSafe = dp(24)
             if (!vertical) {
                 r.left -= reach; r.right += reach
                 if (nearStart) { r.top = statusInset(); r.bottom += inward } else { r.top -= inward; r.bottom = s.height() - navInset() }
@@ -1774,6 +1845,14 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             (if (auto) "Keep the taskbar showing" else "Auto-hide the taskbar") to {
                 closeMenu(); Prefs.setAutoHide(this, !auto); revealed = false
             },
+            // Show on unfold: the same choice, in the same words, as in Taskbar settings. Shown
+            // only where it applies, and the menu opens again on the new value
+            *(if (Prefs.unfoldShowApplies(this)) arrayOf("Show on unfold: ${Prefs.unfoldShow(this).label}" to {
+                val all = UnfoldShow.entries
+                Prefs.setUnfoldShow(this, all[(all.indexOf(Prefs.unfoldShow(this)) + 1) % all.size])
+                closeMenu()
+                onAllAppsHeld(view)
+            }) else emptyArray()),
             "Taskbar settings" to {
                 closeMenu()
                 startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -2512,6 +2591,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         const val RECEDE_SETTLE_MS = 1500L
         /** The bar's entrance after an unfold: long and gentle. */
         const val ENTRANCE_MS = 560L
+        /** Show on unfold, full bar: how long the bar stays once its entrance is over. */
+        const val UNFOLD_HOLD_MS = 3000L
         /** Longest the bar waits for Fold Motion to say its reveal is over. */
         const val COVER_FAILSAFE_MS = 2200L
 
