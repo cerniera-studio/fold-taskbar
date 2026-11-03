@@ -70,6 +70,9 @@ class Apps(private val context: Context) {
         return iconPack
     }
 
+    /** Artwork in the shape and finish of the icon pack's own icons, or null without a pack. */
+    fun frameArt(art: android.graphics.Bitmap): android.graphics.Bitmap? = runCatching { pack()?.frame(art) }.getOrNull()
+
     /** For the event log: which icons are in use. */
     fun iconSummary(): String {
         val packs = IconPack.installed(context)

@@ -270,6 +270,9 @@ object Prefs {
     fun fullScreenStatus(c: Context) = of(c).getBoolean("full_screen_status", true)
     fun setFullScreenStatus(c: Context, v: Boolean) = of(c).edit().putBoolean("full_screen_status", v).apply()
 
+    fun batteryStyle(c: Context) = runCatching { BatteryStyle.valueOf(of(c).getString("battery_style", null)!!) }.getOrDefault(BatteryStyle.FANALE)
+    fun setBatteryStyle(c: Context, v: BatteryStyle) = of(c).edit().putString("battery_style", v.name).apply()
+
     fun unfoldShowApplies(c: Context) = presence(c).let { it == Presence.HIDE || it == Presence.TRIM }
 
     /**

@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var iconsRow: Row
     private lateinit var accessRow: Row
     private lateinit var accessEnd: TextView
+    private lateinit var batteryOptions: View
     private lateinit var presenceDetail: TextView
     private lateinit var recedeOptions: LinearLayout
     private lateinit var hideOptions: LinearLayout
@@ -159,8 +160,14 @@ class MainActivity : Activity() {
                 Toggle(this@MainActivity, Prefs.liveMusic(this@MainActivity)) { Prefs.setLiveMusic(this@MainActivity, it); refresh() }))
             row(accessRow)
             row(Row(this@MainActivity, "Time and battery in full screen", "When an app hides the status bar for a video, a game or reading, the bar carries the time and the battery until the status bar returns. Never shown alongside it",
-                Toggle(this@MainActivity, Prefs.fullScreenStatus(this@MainActivity)) { Prefs.setFullScreenStatus(this@MainActivity, it) }))
+                Toggle(this@MainActivity, Prefs.fullScreenStatus(this@MainActivity)) { Prefs.setFullScreenStatus(this@MainActivity, it); refresh() }))
         })
+        // The battery's style, shown only while the bar may carry it (3 Nov 2026)
+        val styles = BatteryStyle.entries
+        batteryOptions = labelled("Battery", ChoiceList(this, styles.map { st ->
+            Triple(st.label, st.detail, batterySwatch(st))
+        }, styles.indexOf(Prefs.batteryStyle(this))) { Prefs.setBatteryStyle(this, styles[it]) })
+        screen.add(batteryOptions, px(18))
 
         // ---- Motion
         screen.section("App switching")
@@ -267,6 +274,7 @@ class MainActivity : Activity() {
         // Permissions show their state and only ask when something is missing
         val access = MediaListener.granted(this)
         accessRow.visibility = if (Prefs.liveMusic(this)) View.VISIBLE else View.GONE
+        batteryOptions.visibility = if (Prefs.fullScreenStatus(this)) View.VISIBLE else View.GONE
         accessRow.setSub(if (access) "Android lets the bar see which music is playing. Nothing else is read" else "Android only shows which music is playing to apps allowed to read notifications. The bar uses it for that alone")
         accessEnd.text = if (access) "Allowed" else "Allow  ›"
         accessEnd.setTextColor(if (access) Kit.GOOD else Kit.CHAMPAGNE)
@@ -393,6 +401,18 @@ class MainActivity : Activity() {
     }
 
     /** Each way of switching as a still: the window arriving from the icon, as that motion draws it. */
+    /** Each battery style painted at 70%, on the bar's smoked glass, beside the time. */
+    private fun batterySwatch(st: BatteryStyle): (Canvas, RectF) -> Unit = { c, r ->
+        c.drawColor(Color.rgb(28, 34, 31))
+        val d = r.height() * 0.56f
+        val cx = r.centerX() + r.width() * 0.16f
+        Battery.draw(c, st, cx, r.centerY(), d, 70, false, Kit.INK, 0f)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Kit.INK; typeface = Kit.sans(this@MainActivity, 600); textSize = r.height() * 0.24f; textAlign = Paint.Align.RIGHT
+        }
+        c.drawText("22:49", cx - d / 2 - r.height() * 0.12f, r.centerY() + p.textSize * 0.36f, p)
+    }
+
     private fun motionSwatch(m: Motion): (Canvas, RectF) -> Unit = { c, r ->
         c.drawColor(Color.rgb(28, 34, 31))
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
