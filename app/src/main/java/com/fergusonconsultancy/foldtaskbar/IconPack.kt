@@ -117,6 +117,25 @@ class IconPack(private val context: Context, val pkg: String) {
         return BitmapDrawable(context.resources, out)
     }
 
+    /**
+     * Artwork dressed as one of the pack's own icons (3 Nov 2026): cropped to fill, cut to the
+     * silhouette of the pack's background, and given the pack's overlay, so a now-playing tile
+     * is the same shape and finish as every icon beside it. Null when the pack has no background.
+     */
+    fun frame(art: Bitmap): Bitmap? {
+        if (backs.isEmpty()) return null
+        val size = 192
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val k = maxOf(size.toFloat() / art.width, size.toFloat() / art.height)
+        val m = android.graphics.Matrix().apply { setScale(k, k); postTranslate((size - art.width * k) / 2, (size - art.height * k) / 2) }
+        c.drawBitmap(art, m, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        c.drawBitmap(Bitmap.createScaledBitmap(backs[0], size, size, true), 0f, 0f,
+            Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) })
+        upon?.let { u -> c.drawBitmap(Bitmap.createScaledBitmap(u, size, size, true), 0f, 0f, null) }
+        return out
+    }
+
     companion object {
         /** Icon Pack Studio itself: the editor, not a pack. Its packs reach other apps only once exported. */
         const val ICON_PACK_STUDIO = "ginlemon.iconpackstudio"

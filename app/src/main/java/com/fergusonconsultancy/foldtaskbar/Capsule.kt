@@ -321,7 +321,7 @@ class Capsule(
         // Every mark on the bar takes the tone of the zone it sits in
         grid?.let { it.setInk(inks[zoneOf(it)]) }
         grip?.let { it.setInk(inks[zoneOf(it)]) }
-        live?.let { it.setInk(inks[zoneOf(it)]) }
+        live?.let { it.setGlow(glows[zoneOf(it)]) }
         status?.let { it.setInk(inks[zoneOf(it)]) }
         dividers.forEach { it.setBackgroundColor((inks[zoneOf(it)] and 0x00FFFFFF) or 0x30000000) }
         indicators.values.forEach { v ->
@@ -609,10 +609,11 @@ class Capsule(
                     val long = context.dp(iconDp * 0.6f)
                     layoutParams = if (vertical) LayoutParams(long, thin) else LayoutParams(thin, long)
                 }.also { dividers += it }
-                Slot.Live -> LiveView(context, context.dp(iconDp)).also { v ->
+                Slot.Live -> LiveView(context, apps, context.dp(iconDp)).also { v ->
                     live = v
                     liveTrack?.let { v.setTrack(it, liveIcon) }
-                    v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp))
+                    // The same frame as an app icon, so it sits exactly in line with them
+                    v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp) + context.dp(6))
                     v.isClickable = true
                     pressable(v)
                     v.setOnClickListener { it.tick(); ripple(it); actions.onLive(it) }
@@ -620,7 +621,7 @@ class Capsule(
                 }
                 Slot.Status -> StatusView(context, context.dp(iconDp)).also { v ->
                     status = v
-                    v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp))
+                    v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp) + context.dp(6))
                 }
                 is Slot.App -> appIcon(slot)
                 is Slot.AppPair -> pairIcon(slot)
