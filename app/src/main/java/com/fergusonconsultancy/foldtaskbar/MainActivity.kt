@@ -27,6 +27,8 @@ class MainActivity : Activity() {
     private lateinit var setupNote: android.widget.TextView
     private lateinit var setup: LinearLayout
     private lateinit var iconsRow: Row
+    private lateinit var accessRow: Row
+    private lateinit var accessEnd: TextView
     private lateinit var presenceDetail: TextView
     private lateinit var recedeOptions: LinearLayout
     private lateinit var hideOptions: LinearLayout
@@ -146,6 +148,20 @@ class MainActivity : Activity() {
         }
         screen.add(Card(this).apply { row(iconsRow) }, px(18))
 
+        // ---- Live (3 Nov 2026): two ideas from the iPhone Duo's status column, where a need puts them
+        screen.section("Live")
+        accessEnd = endValue("")
+        accessRow = Row(this, "Music access", "", accessEnd) {
+            if (!MediaListener.granted(this)) MediaListener.ask(this)
+        }
+        screen.add(Card(this).apply {
+            row(Row(this@MainActivity, "Now playing", "The music that is playing sits at the bar's outer end: its artwork, with a waveform that moves while it plays. Tap to open the player; hold for play, pause and skip",
+                Toggle(this@MainActivity, Prefs.liveMusic(this@MainActivity)) { Prefs.setLiveMusic(this@MainActivity, it); refresh() }))
+            row(accessRow)
+            row(Row(this@MainActivity, "Time and battery in full screen", "When an app hides the status bar for a video, a game or reading, the bar carries the time and the battery until the status bar returns. Never shown alongside it",
+                Toggle(this@MainActivity, Prefs.fullScreenStatus(this@MainActivity)) { Prefs.setFullScreenStatus(this@MainActivity, it) }))
+        })
+
         // ---- Motion
         screen.section("App switching")
         val motions = Motion.entries
@@ -248,6 +264,13 @@ class MainActivity : Activity() {
         val stopped = enabled && !TaskbarService.running
         setup.visibility = if (enabled && !stopped) View.GONE else View.VISIBLE
         setupNote.text = if (stopped) "Android has stopped the bar (force stopping the app does this). Open Accessibility, switch Fold Taskbar off, then on again." else "Fold Taskbar runs as an accessibility service, so Android asks you to switch it on once."
+        // Permissions show their state and only ask when something is missing
+        val access = MediaListener.granted(this)
+        accessRow.visibility = if (Prefs.liveMusic(this)) View.VISIBLE else View.GONE
+        accessRow.setSub(if (access) "Android lets the bar see which music is playing. Nothing else is read" else "Android only shows which music is playing to apps allowed to read notifications. The bar uses it for that alone")
+        accessEnd.text = if (access) "Allowed" else "Allow  ›"
+        accessEnd.setTextColor(if (access) Kit.GOOD else Kit.CHAMPAGNE)
+        TaskbarService.instance?.liveCheck()
         val pack = Prefs.iconPack(this)
         val packs = IconPack.installed(this)
         iconsRow.setSub(when {
@@ -429,6 +452,7 @@ class MainActivity : Activity() {
             "Avorio, Carbonio, Ceramica" to "Three more adaptive finishes. Avorio is the Giulietta's ivory leather, always the light one, deepening to warm stone over bright screens, with rosso marking the app in use. Carbonio is Bauhaus restraint, always the dark one, lifting to charcoal with a brighter edge over dark screens so its outline holds. Ceramica is Gaudí's glazed tile: each stretch of the bar fires the hue beneath it as glaze, pale over dark screens and deep over bright.",
             "One finish, everywhere" to "The app grid wears whatever the bar is wearing, adapted the same way to the screen it opens over. Over a dark screen smoked glass turns to light glass with dark ink in the grid exactly as it does on the bar.",
             "Profile" to "Round is the capsule, its ends fully rounded. Slim is a lower, flatter slab with tighter corners: Bauhaus in its restraint, giving the screen back a few points.",
+            "Live" to "Two ideas from the iPhone Duo's status column, taken only where a need puts them. Now playing gives the bar a new ability: the music that is playing, at the bar's outer end. The time and battery appear only when an app has hidden the status bar, because Samsung's own status bar cannot be moved, and a second clock beside it would be ornament no need put there. The waveform moves with the playing state, not the sound: the bar cannot hear the audio.",
             "Show on unfold" to "A bar out of sight is only found by remembering where you left it, and after a night folded nobody does. So with Hide or Trim, every unfold shows where the bar lives, then lets it rest again. There is no timer: it happens every time, so you always know what to expect. Leaving, the bar sinks into the edge it rests against, so every hide is a reminder of its place too.",
             "Recede" to "A third presence, and Concentrato for the bar. While you scroll the app beneath, the bar steps back to a faint presence, easing a little smaller, so what you are reading has the screen. It returns unhurried once you stop, and at once if you touch it.",
             "The entrance" to "After an unfold the bar does not simply appear. Once the screen is whole (Fold Motion tells the bar when its reveal has ended) the bar rises a little way from the edge it rests against on a long, soft ease, and its icons settle in from the middle outwards. No bounce: an invitation.",

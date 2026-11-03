@@ -17,6 +17,10 @@ sealed interface Slot {
     object Divider : Slot
     /** The hinge pair's second handle, so each capsule can be lifted and moved on its own. */
     object Grip : Slot
+    /** Now playing (3 Nov 2026): the music that is playing, while it plays or is briefly paused. */
+    object Live : Slot
+    /** The time and the battery, only while an app has hidden Android's status bar. */
+    object Status : Slot
     data class App(val pkg: String) : Slot
     data class AppPair(val left: String, val right: String) : Slot { val key get() = "pair:$left|$right" }
 }
@@ -28,6 +32,8 @@ interface CapsuleActions {
     fun onAllAppsHeld(view: View)
     fun onPair(left: String, right: String, view: View)
     fun onPairHeld(left: String, right: String, view: View)
+    fun onLive(view: View)
+    fun onLiveHeld(view: View)
 }
 
 /** How many stretches of the bar adapt their tone separately. */
@@ -54,6 +60,18 @@ class Capsule(
     private val dividers = mutableListOf<View>()
     private var grid: GlyphView? = null
     private var grip: GlyphView? = null
+    private var live: LiveView? = null
+    private var status: StatusView? = null
+    private var liveTrack: Track? = null
+    private var liveIcon: android.graphics.drawable.Drawable? = null
+
+    /** Gives the now-playing tile its track. */
+    fun setTrack(t: Track?) {
+        if (t == liveTrack) return
+        if (t?.pkg != liveTrack?.pkg) liveIcon = t?.let { apps.icon(it.pkg) }
+        liveTrack = t
+        if (t != null) live?.setTrack(t, liveIcon)
+    }
 
     // The capsule's colours, zone by zone along its length. Smoked glass sets each zone to
     // suit what is behind that part of the bar; fixed finishes keep every zone the same.
@@ -303,6 +321,8 @@ class Capsule(
         // Every mark on the bar takes the tone of the zone it sits in
         grid?.let { it.setInk(inks[zoneOf(it)]) }
         grip?.let { it.setInk(inks[zoneOf(it)]) }
+        live?.let { it.setInk(inks[zoneOf(it)]) }
+        status?.let { it.setInk(inks[zoneOf(it)]) }
         dividers.forEach { it.setBackgroundColor((inks[zoneOf(it)] and 0x00FFFFFF) or 0x30000000) }
         indicators.values.forEach { v ->
             val frame = v.parent as? View ?: v
@@ -572,6 +592,8 @@ class Capsule(
         dividers.clear()
         grid = null
         grip = null
+        live = null
+        status = null
         slots.forEachIndexed { i, slot ->
             val v = when (slot) {
                 Slot.AllApps -> glyph(Glyph.GRID) { actions.onAllApps(it) }.also { grid = it as GlyphView }.apply {
@@ -587,6 +609,19 @@ class Capsule(
                     val long = context.dp(iconDp * 0.6f)
                     layoutParams = if (vertical) LayoutParams(long, thin) else LayoutParams(thin, long)
                 }.also { dividers += it }
+                Slot.Live -> LiveView(context, context.dp(iconDp)).also { v ->
+                    live = v
+                    liveTrack?.let { v.setTrack(it, liveIcon) }
+                    v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp))
+                    v.isClickable = true
+                    pressable(v)
+                    v.setOnClickListener { it.tick(); ripple(it); actions.onLive(it) }
+                    v.setOnLongClickListener { it.thud(); actions.onLiveHeld(it); true }
+                }
+                Slot.Status -> StatusView(context, context.dp(iconDp)).also { v ->
+                    status = v
+                    v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp))
+                }
                 is Slot.App -> appIcon(slot)
                 is Slot.AppPair -> pairIcon(slot)
             }

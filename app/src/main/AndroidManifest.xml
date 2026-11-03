@@ -82,6 +82,17 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/taskbar_service" />
         </service>
+        <!-- Now playing (3 Nov 2026): Android only shows which music is playing to an app it
+             trusts with notifications. This service holds that permission and reads nothing else -->
+        <service
+            android:name=".MediaListener"
+            android:exported="true"
+            android:label="Fold Taskbar now playing"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <!-- Quick Settings tile: shows whether the bar is running, and brings it back -->
         <service
             android:name=".TaskbarTile"

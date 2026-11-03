@@ -264,6 +264,12 @@ object Prefs {
     /** Show on unfold: only Hide and Trim take the bar out of full view, so only they use it. */
     fun unfoldShow(c: Context) = runCatching { UnfoldShow.valueOf(of(c).getString("unfold_show", null)!!) }.getOrDefault(UnfoldShow.FULL)
     fun setUnfoldShow(c: Context, v: UnfoldShow) = of(c).edit().putString("unfold_show", v.name).apply()
+    /** Live (3 Nov 2026): now playing on the bar, and the time and battery when an app hides the status bar. */
+    fun liveMusic(c: Context) = of(c).getBoolean("live_music", true)
+    fun setLiveMusic(c: Context, v: Boolean) = of(c).edit().putBoolean("live_music", v).apply()
+    fun fullScreenStatus(c: Context) = of(c).getBoolean("full_screen_status", true)
+    fun setFullScreenStatus(c: Context, v: Boolean) = of(c).edit().putBoolean("full_screen_status", v).apply()
+
     fun unfoldShowApplies(c: Context) = presence(c).let { it == Presence.HIDE || it == Presence.TRIM }
 
     /**
