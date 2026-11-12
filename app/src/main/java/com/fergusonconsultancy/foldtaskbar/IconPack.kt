@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent

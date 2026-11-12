@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
@@ -50,6 +51,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Crash.install(this, "Fold Taskbar")
+        if (Crash.show(this, "Fold Taskbar")) return
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         screen = Screen(this, "Fold Taskbar", "Galaxy Z Fold 8 Ultra")
@@ -233,6 +236,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (!::screen.isInitialized) return
         refresh()
     }
 

@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.view.HapticFeedbackConstants

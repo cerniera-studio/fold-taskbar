@@ -1,0 +1,66 @@
+name: Shapes test
+
+# Installs the APK, turns the bar on and photographs it and the settings in the four shapes.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # API 34 images die on this runner while forking a freshly installed app's process,
+          # before any app code runs (4 Nov); API 33 is stable
+          - name: api33-swiftshader
+            api: 33
+            gpu: swiftshader_indirect
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          emulator-options: -no-window -gpu ${{ matrix.gpu }} -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: false
+          script: bash .github/launch.sh
+
+      - name: Publish screenshots to the screens branch
+        if: always()
+        run: |
+          [ -d shots ] || exit 0
+          cd shots
+          git init -q -b screens-${{ matrix.name }}
+          git config user.name "Fold Taskbar shapes test"; git config user.email "actions@users.noreply.github.com"
+          git add -A && git commit -qm "Screens from ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" screens-${{ matrix.name }}

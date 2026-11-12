@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context

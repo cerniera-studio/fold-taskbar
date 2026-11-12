@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
