@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fergusonconsultancy.foldtaskbar"
-        minSdk = 30
+        minSdk = 31  // the Kit needs Android 12; the Fold runs far newer
         targetSdk = 35
         // Each GitHub build gets a higher number so it installs as an update
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
