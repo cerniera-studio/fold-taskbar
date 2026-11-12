@@ -41,7 +41,7 @@ class MainActivity : Activity() {
     private fun tuned(label: String, min: Int, max: Int, value: Int, designed: Int, save: (android.content.Context, Int) -> Unit,
                       note: String, format: (Int) -> String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        addView(Slider(this@MainActivity, label, min.toFloat(), max.toFloat(), value.toFloat(), designed.toFloat(), { format(kotlin.math.round(it).toInt()) }) {
+        addView(Slider(this@MainActivity, label, min.toFloat(), max.toFloat(), value.toFloat(), designed.toFloat(), step = 1f, format = { format(kotlin.math.round(it).toInt()) }) {
             save(this@MainActivity, kotlin.math.round(it).toInt())
         })
         addView(text(note, 13f, Kit.MUTED).apply { setPadding(px(18), 0, px(18), px(14)) })

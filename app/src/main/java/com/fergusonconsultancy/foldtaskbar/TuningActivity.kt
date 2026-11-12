@@ -95,7 +95,7 @@ class TuningActivity : Activity() {
     private fun whole(
         label: String, min: Int, max: Int, value: Int, designed: Int,
         save: (Context, Int) -> Unit, replays: Boolean = true, format: (Int) -> String = { "$it" },
-    ) = Slider(this, label, min.toFloat(), max.toFloat(), value.toFloat(), designed.toFloat(), { format(it.roundToInt()) }) {
+    ) = Slider(this, label, min.toFloat(), max.toFloat(), value.toFloat(), designed.toFloat(), step = 1f, format = { format(it.roundToInt()) }) {
         save(this, it.roundToInt())
         if (replays) replay(hideFirst = false)
     }
