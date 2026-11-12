@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
