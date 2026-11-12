@@ -250,6 +250,9 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         super.onConfigurationChanged(newConfig)
         val diff = lastConfig?.diff(newConfig) ?: -1
         lastConfig = Configuration(newConfig)
+        // A change can land before the service has connected (12 Nov: the screen resized as it
+        // was switched on); there is nothing built yet to change
+        if (!::apps.isInitialized) return
         val looks = android.content.pm.ActivityInfo.CONFIG_DENSITY or android.content.pm.ActivityInfo.CONFIG_FONT_SCALE or
             android.content.pm.ActivityInfo.CONFIG_LOCALE or android.content.pm.ActivityInfo.CONFIG_UI_MODE
         if (diff and looks != 0) {
