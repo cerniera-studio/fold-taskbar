@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.content.Context
 import android.content.SharedPreferences
 
@@ -116,6 +117,15 @@ fun lightOver(lum: Float, was: Boolean?): Boolean = when {
  * the bar in full whichever is chosen.
  */
 enum class Presence(val label: String) { ALWAYS("Always"), HIDE("Hide"), RECEDE("Recede"), TRIM("Trim") }
+
+/**
+ * Show on unfold (2 Nov 2026). A bar out of sight is only found by remembering where it was,
+ * and after a night folded nobody remembers. So for Hide and Trim, every unfold (and every
+ * unlock with the phone open) shows where the bar lives, then lets it rest again. Full bar
+ * makes the usual entrance and holds it for a few seconds; Peek lights only the active-app pill
+ * where the bar sits. No timer: it happens every time, so it is always predictable.
+ */
+enum class UnfoldShow(val label: String) { FULL("Full bar"), PEEK("Peek"), OFF("Off") }
 
 /**
  * The bar's profile (25 Oct 2026). Round: the capsule, ends fully rounded. Slim: a lower, flatter
@@ -251,6 +261,20 @@ object Prefs {
     fun homeInFull(c: Context) = of(c).getBoolean("home_in_full", true)
     fun setHomeInFull(c: Context, v: Boolean) = of(c).edit().putBoolean("home_in_full", v).apply()
     fun setPresence(c: Context, v: Presence) = of(c).edit().putString("presence", v.name).apply()
+
+    /** Show on unfold: only Hide and Trim take the bar out of full view, so only they use it. */
+    fun unfoldShow(c: Context) = runCatching { UnfoldShow.valueOf(of(c).getString("unfold_show", null)!!) }.getOrDefault(UnfoldShow.FULL)
+    fun setUnfoldShow(c: Context, v: UnfoldShow) = of(c).edit().putString("unfold_show", v.name).apply()
+    /** Live (3 Nov 2026): now playing on the bar, and the time and battery when an app hides the status bar. */
+    fun liveMusic(c: Context) = of(c).getBoolean("live_music", true)
+    fun setLiveMusic(c: Context, v: Boolean) = of(c).edit().putBoolean("live_music", v).apply()
+    fun fullScreenStatus(c: Context) = of(c).getBoolean("full_screen_status", true)
+    fun setFullScreenStatus(c: Context, v: Boolean) = of(c).edit().putBoolean("full_screen_status", v).apply()
+
+    fun batteryStyle(c: Context) = runCatching { BatteryStyle.valueOf(of(c).getString("battery_style", null)!!) }.getOrDefault(BatteryStyle.FANALE)
+    fun setBatteryStyle(c: Context, v: BatteryStyle) = of(c).edit().putString("battery_style", v.name).apply()
+
+    fun unfoldShowApplies(c: Context) = presence(c).let { it == Presence.HIDE || it == Presence.TRIM }
 
     /**
      * Recede (30 Oct 2026): how long the bar stays in full after you last used it, or after an

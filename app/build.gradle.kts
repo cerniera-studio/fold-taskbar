@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fergusonconsultancy.foldtaskbar"
-        minSdk = 30
+        minSdk = 31  // the Kit needs Android 12; the Fold runs far newer
         targetSdk = 35
         // Each GitHub build gets a higher number so it installs as an update
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
@@ -47,6 +47,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":kit"))
     // Reaches the hidden "launch as a pop-up window" option for the experimental pop-up action
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
     // The all-apps grid draws only the icons on screen

@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.accessibilityservice.AccessibilityService
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
@@ -152,6 +153,11 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             sm.getDefaultSensor(android.hardware.Sensor.TYPE_HINGE_ANGLE)?.let { sm.registerListener(this, it, android.hardware.SensorManager.SENSOR_DELAY_UI, main) }
         }
         pour = Pour(this, wm)
+        nowPlaying = NowPlaying(this) {
+            capsules.forEach { c -> c.setTrack(liveTrack()) }
+            main.removeCallbacks(applyNow); main.post(applyNow)
+        }
+        liveCheck()
         drawer = AppDrawer(this, wm, apps, onOpenApp = { pkg, v -> fromGrid(pkg, v) }, onHoldApp = { pkg, v -> openMenu(pkg, v) }, drag = this)
         // The bar now stays on the home screen too; only system surfaces such as the
         // notification shade push it aside.
@@ -225,6 +231,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     override fun onDestroy() {
+        if (::nowPlaying.isInitialized) nowPlaying.stop()
         running = false
         instance = null
         runCatching { getSystemService(android.hardware.SensorManager::class.java)?.unregisterListener(this) }
@@ -255,6 +262,9 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         super.onConfigurationChanged(newConfig)
         val diff = lastConfig?.diff(newConfig) ?: -1
         lastConfig = Configuration(newConfig)
+        // A change can land before the service has connected (12 Nov: the screen resized as it
+        // was switched on); there is nothing built yet to change
+        if (!::apps.isInitialized) return
         val looks = android.content.pm.ActivityInfo.CONFIG_DENSITY or android.content.pm.ActivityInfo.CONFIG_FONT_SCALE or
             android.content.pm.ActivityInfo.CONFIG_LOCALE or android.content.pm.ActivityInfo.CONFIG_UI_MODE
         if (diff and looks != 0) {
@@ -277,6 +287,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     override fun onSharedPreferenceChanged(p: SharedPreferences?, key: String?) {
         if (key == "presence") main.post { restIfTrim(); listenForScrolls() }
+        if (key == "live_music") main.post { liveCheck() }
         if (key == Prefs.ICON_PACK) {
             // New icons everywhere: rebuild the bar and reload the grid
             layoutKey = ""
@@ -398,8 +409,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val boxes = HashMap<String, Rect>()
         var imeTop: Int? = null
         var system = false
+        var statusSeen = false
         var unreadableFront = false
         var seenIgnored = false
+        val screenW = liveBounds().width()
         val r = Rect()
         for (w in list) {
             when (w.type) {
@@ -417,7 +430,14 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                 // screen and after unlocking or unfolding. Any focused system window counted,
                 // including small ones One UI focuses in passing. Now only a panel that covers a
                 // real part of the screen (the shade, Quick Settings, the power menu) puts the bar aside.
-                AccessibilityWindowInfo.TYPE_SYSTEM -> if (w.isFocused && w.id == ignoredSystemId) seenIgnored = true else if (w.isFocused) {
+                AccessibilityWindowInfo.TYPE_SYSTEM -> if (!w.isFocused) {
+                    // Live (3 Nov 2026): Android's status bar, a thin system window across the top.
+                    // When an app hides it for full screen, it is no longer listed
+                    w.getBoundsInScreen(r)
+                    if (r.top <= 2 && r.height() in 1..(statusPx + dp(10)) && r.width() * 2 >= screenW) statusSeen = true
+                } else if (w.id == ignoredSystemId) {
+                    seenIgnored = true
+                } else {
                     w.getBoundsInScreen(r)
                     val screenArea = (liveBounds().width().toLong() * liveBounds().height()).coerceAtLeast(1)
                     // ...and only one actually showing something. One UI can leave the lock
@@ -453,6 +473,9 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         keyboardTop = imeTop
         systemInFront = system
         if (!seenIgnored) ignoredSystemId = -1
+        if (statusSeen) statusReadable = true
+        // Only an app in front can hide the status bar; a moment with no app read is a transition
+        if (found.isNotEmpty()) statusVisible = statusSeen
         // An empty list is a transition in progress, not a real state. Keep the last one.
         // Nothing readable in front, and nothing seen yet: it is almost always the home screen,
         // which used to leave the bar hidden until the first app was opened
@@ -561,6 +584,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         guide.end()
         removeStrips()
         removeTab()
+        removePeeks()
         revealed = false
     }
 
@@ -590,7 +614,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             when (i?.action) {
                 Intent.ACTION_SCREEN_OFF -> if (::wm.isInitialized) vanish()
                 Intent.ACTION_SCREEN_ON -> { if (::wm.isInitialized && locked()) vanish(); refreshHinge(); settleScans() }
-                Intent.ACTION_USER_PRESENT -> { refreshHinge(); settleScans() }
+                Intent.ACTION_USER_PRESENT -> { refreshHinge(); settleScans(); liveCheck() }
             }
         }
     }
@@ -607,6 +631,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Main thread. Cheap when nothing has changed. */
     private fun apply() {
         if (!::wm.isInitialized) return
+        statusPx = statusInset()
         recordRecents()
         reportOpenTime()
         sampleSoon()
@@ -688,7 +713,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val active = onScreen.toSet() + Prefs.pairs(this)
             .filter { (l, r) -> l in onScreen && r in onScreen }
             .map { (l, r) -> Slot.AppPair(l, r).key }
-        capsules.forEachIndexed { i, c -> c.show(groups.getOrElse(i) { emptyList() }, active) }
+        val track = liveTrack()
+        capsules.forEachIndexed { i, c -> c.setTrack(track); c.show(groups.getOrElse(i) { emptyList() }, active) }
 
         val collapsed = Prefs.collapsed(this)
         val panelsOpen = drawer.isOpen || menuWindow != null
@@ -771,8 +797,13 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             hosts.forEach { Tuning.cancel(it); it.animate().cancel(); it.visibility = View.GONE }
             return
         }
+        // 2 Nov 2026: this line went missing on 25 Oct with the entrance above, so the bar only
+        // ever switched itself back on when Fold Motion covered an unfold. Unlocking with the
+        // phone open, or unfolding onto the lock screen, left it off, calls included, until
+        // the next fold and unfold
+        barOn = on
         entering = on && arriving
-        if (entering) arriving = false
+        if (entering) { arriving = false; showOnUnfold() }
         hosts.forEachIndexed { i, host ->
             val want = hostWanted(i)
             if (want && host.visibility != View.VISIBLE) place(i)
@@ -781,6 +812,132 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         entering = false
         if (!on) closePanels()
     }
+
+    // ---- Live (3 Nov 2026): now playing, and status in full screen ---------------------------
+
+    private lateinit var nowPlaying: NowPlaying
+    /** Whether Android's status bar was listed in the last scan, and whether it ever has been. */
+    @Volatile private var statusVisible = true
+    @Volatile private var statusReadable = false
+    @Volatile private var statusPx = 0
+    /** Status shows only once the status bar has stayed hidden this long, so a passing gap never flashes it. */
+    private var statusHiddenSince = 0L
+    private var statusShowing = false
+    private val statusRecheck = Runnable { main.removeCallbacks(applyNow); main.post(applyNow) }
+
+    /** Starts following the music once Android allows it; called whenever that may have changed. */
+    fun liveCheck() {
+        if (!::nowPlaying.isInitialized) return
+        if (Prefs.liveMusic(this) && MediaListener.granted(this)) nowPlaying.start() else nowPlaying.stop()
+    }
+
+    private fun liveTrack(): Track? = if (::nowPlaying.isInitialized && Prefs.liveMusic(this)) nowPlaying.track else null
+
+    /** Whether the bar should carry the time and battery now, with the status bar's absence held to [STATUS_HOLD_MS]. */
+    private fun wantStatus(): Boolean {
+        val hidden = Prefs.fullScreenStatus(this) && statusReadable && !statusVisible && !hubInFull() &&
+            onScreen.firstOrNull() !in homes
+        val now = SystemClock.uptimeMillis()
+        main.removeCallbacks(statusRecheck)
+        val want = when {
+            !hidden -> { statusHiddenSince = 0L; false }
+            statusShowing -> true
+            statusHiddenSince == 0L -> { statusHiddenSince = now; main.postDelayed(statusRecheck, STATUS_HOLD_MS); false }
+            now - statusHiddenSince >= STATUS_HOLD_MS -> true
+            else -> { main.postDelayed(statusRecheck, STATUS_HOLD_MS - (now - statusHiddenSince)); false }
+        }
+        if (want != statusShowing) {
+            statusShowing = want
+            EventLog.add(this, if (want) "Status bar hidden by ${onScreen.firstOrNull()}: time and battery on the bar" else "Status bar back: time and battery leave the bar")
+        }
+        return want
+    }
+
+    override fun onLive(view: View) {
+        closePanels()
+        onBarTouched()
+        if (!nowPlaying.open()) EventLog.add(this, "Now playing: the player could not be opened")
+    }
+
+    override fun onLiveHeld(view: View) {
+        closePanels()
+        val t = nowPlaying.track ?: return
+        val title = if (t.artist.isBlank()) t.title else "${t.title} · ${t.artist}"
+        showMenu(title, listOf(
+            (if (t.playing) "Pause" else "Play") to { closeMenu(); nowPlaying.toggle() },
+            "Next" to { closeMenu(); nowPlaying.next() },
+            "Previous" to { closeMenu(); nowPlaying.previous() },
+            "Open ${apps.entry(t.pkg)?.label ?: "player"}" to { closeMenu(); nowPlaying.open() },
+        ), view)
+    }
+
+    // ---- Show on unfold (2 Nov 2026) ----------------------------------------------------
+    // Hide and Trim keep the bar out of full view, and after a night folded nobody remembers
+    // where it was left. So every arrival (an unfold, or an unlock with the phone open) shows
+    // where it lives, then lets it rest again. No timer: it happens every time.
+
+    private val peeks = mutableListOf<PeekLight>()
+
+    private fun showOnUnfold() {
+        if (!Prefs.unfoldShowApplies(this) || hubInFull() || Prefs.collapsed(this) != null) return
+        val mode = Prefs.unfoldShow(this)
+        if (mode == UnfoldShow.OFF) return
+        val hold = ENTRANCE_MS + UNFOLD_HOLD_MS
+        val presence = Prefs.presence(this)
+        if (mode == UnfoldShow.FULL) {
+            if (presence == Presence.HIDE) {
+                // Called up as if by a swipe, but held for the unfold's own time, whatever the
+                // holding time is set to. A touch on the bar keeps it, as any call would
+                revealed = true
+                // The strips only call a hidden bar; over a shown one they would take its touches
+                removeStrips()
+                main.removeCallbacks(autoHideNow)
+                main.postDelayed(autoHideNow, hold)
+            } else {
+                capsules.forEach { it.setResting(false) }
+                main.removeCallbacks(restNow)
+                main.postDelayed(restNow, hold)
+            }
+            EventLog.add(this, "Shown on unfold: full bar")
+        } else {
+            // Peek: the bar stays as it is; once it has its place, only the pill lights there
+            main.postDelayed({ peek() }, 60)
+            EventLog.add(this, "Shown on unfold: peek")
+        }
+    }
+
+    private fun peek() {
+        removePeeks()
+        if (!barOn || !isMainScreen() || locked()) return
+        val box = dp(PeekLight.PEEK_BOX_DP)
+        hosts.indices.forEach { i ->
+            val host = hosts[i]
+            place(i)
+            val lp = host.layoutParams as? WindowManager.LayoutParams ?: return@forEach
+            host.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val w = host.measuredWidth.takeIf { it > 0 } ?: host.width
+            val h = host.measuredHeight.takeIf { it > 0 } ?: host.height
+            if (w <= 0 || h <= 0) return@forEach
+            val capsule = capsules.getOrNull(i)
+            // On the active app's own pill when the capsule knows where it is; else the bar's middle
+            val mark = capsule?.activeMark()
+            val (cx, cy) = if (mark != null && capsule != null && capsule.width > 0)
+                (lp.x + capsule.left + mark.centerX()) to (lp.y + capsule.top + mark.centerY())
+            else (lp.x + w / 2f) to (lp.y + h / 2f)
+            val (vertical, nearStart) = restingEdge(host)
+            val tx = if (vertical) (if (nearStart) -1f else 1f) else 0f
+            val ty = if (!vertical) (if (nearStart) -1f else 1f) else 0f
+            val light = PeekLight(this, vertical, tx, ty)
+            val p = params(Gravity.TOP or Gravity.START, (cx - box / 2f).toInt(), (cy - box / 2f).toInt(), w = box, h = box).apply {
+                flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
+            add(light, p)
+            peeks += light
+            light.play { remove(light); peeks.remove(light) }
+        }
+    }
+
+    private fun removePeeks() { peeks.forEach { it.cancel(); remove(it) }; peeks.clear() }
 
     /** Whether the bar at [host] stands at a side, and whether it rests against the top or left edge. */
     private fun restingEdge(host: BarHost): Pair<Boolean, Boolean> {
@@ -1513,6 +1670,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     private fun reveal() {
+        removePeeks()
         revealed = true
         apply()
         scheduleAutoHide()
@@ -1521,6 +1679,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Any touch on the bar keeps it up for a few more seconds. */
     private fun onBarTouched() {
         markUsed()
+        removePeeks()
         returnFromRecede(gentle = false)
         if (Prefs.autoHide(this) && revealed) scheduleAutoHide()
         scheduleRest()
@@ -1548,7 +1707,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             val pad = dp(10)
             val r = Rect(lp.x + pad, lp.y + pad, lp.x + w - pad, lp.y + h - pad)
             val (vertical, nearStart) = restingEdge(host)
-            val reach = dp(20); val inward = dp(16); val edgeSafe = dp(24)
+            val reach = dp(20); val inward = dp(24); val edgeSafe = dp(24)
             if (!vertical) {
                 r.left -= reach; r.right += reach
                 if (nearStart) { r.top = statusInset(); r.bottom += inward } else { r.top -= inward; r.bottom = s.height() - navInset() }
@@ -1697,21 +1856,25 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val tray = Prefs.tray(this)
             .filter { it !in pinned && it !in noRecents && apps.isLaunchable(it) }
             .take(Prefs.recentCount(this))
+        // Live sits at the bar's outer end, as the Duo's column sits at the screen's edge
+        val live = listOfNotNull(Slot.Live.takeIf { liveTrack() != null }, Slot.Status.takeIf { wantStatus() })
         return when (shape) {
             Shape.PAIR -> listOf(
                 (listOf(Slot.AllApps) + pinned.map { Slot.App(it) } + pairs).take(maxSlots),
                 // The second capsule gets its own handle at its outer end, mirroring the grid
                 // button, so in split screen each half of the bar can sit over its own app
-                tray.take(maxSlots - 1).map { Slot.App(it) } + Slot.Grip,
+                tray.take((maxSlots - 1 - live.size).coerceAtLeast(1)).map { Slot.App(it) } +
+                    (if (live.isNotEmpty()) listOf(Slot.Divider) + live else emptyList()) + Slot.Grip,
             )
             Shape.CAPSULE -> {
                 val p = pinned.take((maxSlots - 1) / 2 + 1)
-                val r = tray.take((maxSlots - 1 - p.size - pairs.size).coerceAtLeast(1))
+                val r = tray.take((maxSlots - 1 - p.size - pairs.size - live.size).coerceAtLeast(1))
                 val pr = pairs.take((maxSlots - 1 - p.size).coerceAtLeast(0))
                 listOf(
                     listOf(Slot.AllApps) + p.map { Slot.App(it) } + pr +
                         (if (p.isNotEmpty() && r.isNotEmpty()) listOf(Slot.Divider) else emptyList()) +
-                        r.map { Slot.App(it) }
+                        r.map { Slot.App(it) } +
+                        (if (live.isNotEmpty()) listOf(Slot.Divider) + live else emptyList())
                 )
             }
         }
@@ -1831,6 +1994,14 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     collapseTo(edge, along.coerceIn(0.08f, 0.92f))
                 }
             },
+            // Show on unfold: the same choice, in the same words, as in Taskbar settings. Shown
+            // only where it applies, and the menu opens again on the new value
+            *(if (Prefs.unfoldShowApplies(this)) arrayOf("Show on unfold: ${Prefs.unfoldShow(this).label}" to {
+                val all = UnfoldShow.entries
+                Prefs.setUnfoldShow(this, all[(all.indexOf(Prefs.unfoldShow(this)) + 1) % all.size])
+                closeMenu()
+                onAllAppsHeld(view)
+            }) else emptyArray()),
             "Taskbar settings" to {
                 closeMenu()
                 startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -2570,6 +2741,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         const val RECEDE_SETTLE_MS = 1500L
         /** The bar's entrance after an unfold: long and gentle. */
         const val ENTRANCE_MS = 560L
+        /** Show on unfold, full bar: how long the bar stays once its entrance is over. */
+        const val UNFOLD_HOLD_MS = 3000L
+        /** How long the status bar must stay hidden before the bar carries the time. */
+        const val STATUS_HOLD_MS = 600L
         /** Longest the bar waits for Fold Motion to say its reveal is over. */
         const val COVER_FAILSAFE_MS = 2200L
 

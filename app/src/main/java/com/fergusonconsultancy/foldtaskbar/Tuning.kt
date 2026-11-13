@@ -1,5 +1,6 @@
 package com.fergusonconsultancy.foldtaskbar
 
+import com.cerniera.kit.*
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.TimeInterpolator
@@ -180,6 +181,8 @@ object Tuning {
         val (sx0, sy0) = lengthAndHeight(c, vertical)
         val spring = spring(c)
         v.scaleX = sx0; v.scaleY = sy0; v.alpha = 0f
+        val (ex, ey) = sink(v, vertical, nearStart)
+        v.translationX = ex; v.translationY = ey
         running[v] = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = durationMs(duration(c))
             interpolator = null
@@ -188,6 +191,7 @@ object Tuning {
                 val s = spring.getInterpolation(f)
                 v.scaleX = sx0 + (1f - sx0) * s
                 v.scaleY = sy0 + (1f - sy0) * s
+                v.translationX = ex * (1f - s); v.translationY = ey * (1f - s)
                 // Fully there within the first third, so the shape is read, not a fade
                 val a = (f / 0.34f).coerceIn(0f, 1f)
                 v.alpha = a * a * (3f - 2f * a)
@@ -196,12 +200,20 @@ object Tuning {
                 override fun onAnimationEnd(animation: Animator) {
                     if (running[v] === animation) running.remove(v)
                     v.scaleX = 1f; v.scaleY = 1f; v.alpha = 1f
+                    v.translationX = 0f; v.translationY = 0f
                     v.resetPivot()
                 }
             })
             start()
         }
     }
+
+    /** How far into its resting edge the bar sinks as it leaves, and rises from as it comes. */
+    private fun sink(v: View, vertical: Boolean, nearStart: Boolean): Pair<Float, Float> {
+        val d = v.context.dp(SINK_DP).toFloat() * (if (nearStart) -1f else 1f)
+        return if (vertical) d to 0f else 0f to d
+    }
+    private const val SINK_DP = 12
 
     /** The bar leaves: back to its starting length and height as it fades, faster than it came. */
     fun hide(v: View, vertical: Boolean, nearStart: Boolean, end: Runnable) {
@@ -210,6 +222,10 @@ object Tuning {
         pivot(v, vertical, nearStart)
         val (sx1, sy1) = lengthAndHeight(c, vertical)
         val sx0 = v.scaleX; val sy0 = v.scaleY; val a0 = v.alpha
+        // 2 Nov 2026: it sinks into the edge it rests against rather than fading where it is,
+        // so every hide shows where the bar lives
+        val (ex, ey) = sink(v, vertical, nearStart)
+        val tx0 = v.translationX; val ty0 = v.translationY
         val ease = Curves.CLOSE
         running[v] = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = (durationMs(duration(c)) * 0.55f).toLong()
@@ -219,13 +235,15 @@ object Tuning {
                 v.scaleX = sx0 + (sx1 - sx0) * f
                 v.scaleY = sy0 + (sy1 - sy0) * f
                 v.alpha = a0 * (1f - f)
+                v.translationX = tx0 + (ex - tx0) * f
+                v.translationY = ty0 + (ey - ty0) * f
             }
             addListener(object : AnimatorListenerAdapter() {
                 private var cancelled = false
                 override fun onAnimationCancel(animation: Animator) { cancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
                     if (running[v] === animation) running.remove(v)
-                    if (!cancelled) { end.run(); v.resetPivot() }
+                    if (!cancelled) { end.run(); v.resetPivot(); v.translationX = 0f; v.translationY = 0f }
                 }
             })
             start()
