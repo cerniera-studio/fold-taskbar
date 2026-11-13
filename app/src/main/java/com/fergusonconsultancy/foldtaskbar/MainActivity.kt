@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var accessEnd: TextView
     private lateinit var batteryOptions: View
     private lateinit var presenceDetail: TextView
+    private lateinit var presencePicker: Segmented
     private lateinit var recedeOptions: LinearLayout
     private lateinit var hideOptions: LinearLayout
     private lateinit var unfoldOptions: LinearLayout
@@ -72,19 +73,16 @@ class MainActivity : Activity() {
         setup.addView(steps)
         screen.add(setup)
 
-        // ---- How the bar rests
-        screen.section("Presence")
-        // The hub (30 Oct 2026): home always has the bar in full; the presence is for apps
-        screen.add(Card(this).apply {
-            row(Row(this@MainActivity, "Always in full on the home screen", "Home is the hub: the bar is always there in full. What you choose below is for inside apps",
-                Toggle(this@MainActivity, Prefs.homeInFull(this@MainActivity)) { Prefs.setHomeInFull(this@MainActivity, it) }))
-        }, px(0))
-        screen.add(text("In apps", 14f, Kit.MUTED, 450).apply { setPadding(px(4), px(18), 0, px(8)) })
+        // ---- How the bar rests. One choice for apps, the same words as the bar's own menu
+        // (1 Nov 2026), then the home screen's exception beneath it
+        screen.section("Showing the bar")
+        screen.add(text("In apps", 14f, Kit.MUTED, 450).apply { setPadding(px(4), 0, 0, px(8)) })
         val presences = Presence.entries
         presenceDetail = text("", 13.5f, Kit.MUTED).apply { tag = SECONDARY; setPadding(px(4), px(10), 0, 0) }
-        screen.add(Segmented(this, presences.map { it.label }, presences.indexOf(Prefs.presence(this))) {
+        presencePicker = Segmented(this, presences.map { it.label }, presences.indexOf(Prefs.presence(this))) {
             Prefs.setPresence(this, presences[it]); paintPresence()
-        })
+        }
+        screen.add(presencePicker)
         screen.add(presenceDetail)
         // Show on unfold (2 Nov 2026), for the two presences that take the bar out of full view.
         // The bar's own menu offers the same choice in the same words
@@ -105,7 +103,7 @@ class MainActivity : Activity() {
                 Prefs.setRecedeAfter(this@MainActivity, it); paintPresence()
             }), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(18) })
             addView(Card(this@MainActivity).apply {
-                row(Row(this@MainActivity, "Tap elsewhere to recede", "A tap anywhere outside the bar sends it back, and it stays back until you touch it",
+                row(Row(this@MainActivity, "Tap elsewhere to recede", "Also fade back when you tap outside the bar",
                     Toggle(this@MainActivity, Prefs.recedeOnTap(this@MainActivity)) { Prefs.setRecedeOnTap(this@MainActivity, it); paintPresence() }))
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(12) })
         }
@@ -125,6 +123,11 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(18) })
         }
         screen.add(hideOptions)
+        screen.add(text("On the home screen", 14f, Kit.MUTED, 450).apply { setPadding(px(4), px(22), 0, px(8)) })
+        screen.add(Card(this).apply {
+            row(Row(this@MainActivity, "Always in full", "Off, the home screen follows the In apps choice",
+                Toggle(this@MainActivity, Prefs.homeInFull(this@MainActivity)) { Prefs.setHomeInFull(this@MainActivity, it) }))
+        }, px(0))
         paintPresence()
 
         // ---- Look
@@ -238,20 +241,18 @@ class MainActivity : Activity() {
         super.onResume()
         if (!::screen.isInitialized) return
         refresh()
+        paintPresence()
     }
 
     private fun paintPresence() {
         presenceDetail.text = when (Prefs.presence(this)) {
-            Presence.ALWAYS -> "In apps too, the bar is always there in full. It still steps aside for the keyboard."
-            Presence.HIDE -> "In apps, the bar is out of sight until you call it: swipe up or tap where it sits, or use the Quick Settings tile. It stays for the holding time, then leaves again."
-            Presence.TRIM -> "In apps, the bar rests as a fine line of trim. Touch it and the icons rise around your finger; slide along it and they swell as you pass; lift on one to open it."
-            Presence.RECEDE -> {
-                val after = Prefs.recedeAfter(this)
-                val wait = if (after == 0) "Once a new app has settled" else "Once ${Prefs.RECEDE_AFTER_LABELS[after]} have passed since you last used the bar or opened an app"
-                val tap = if (Prefs.recedeOnTap(this)) " A tap elsewhere sends it back too, and it stays back until you touch it." else ""
-                "Concentrato for the bar. $wait, scrolling the app beneath sends the bar back to a faint presence so what you are reading has the screen, and it returns, unhurried, once you stop.$tap Faint, it still works: tap an app on it and that app opens."
-            }
+            Presence.ALWAYS -> "Always there in full. It steps aside only for the keyboard."
+            Presence.HIDE -> "Out of sight until you swipe up or tap where it sits. It leaves again after the holding time."
+            Presence.TRIM -> "A fine line of trim. Touch it and the icons rise around your finger."
+            Presence.RECEDE -> "Fades to a faint line while you scroll and returns when you stop. Faint, it still opens apps."
         }
+        // The bar's menu can change the choice while this screen is open behind it
+        presencePicker.select(Presence.entries.indexOf(Prefs.presence(this)))
         recedeOptions.visibility = if (Prefs.presence(this) == Presence.RECEDE) View.VISIBLE else View.GONE
         hideOptions.visibility = if (Prefs.presence(this) == Presence.HIDE) View.VISIBLE else View.GONE
         unfoldOptions.visibility = if (Prefs.unfoldShowApplies(this)) View.VISIBLE else View.GONE
@@ -467,7 +468,7 @@ class MainActivity : Activity() {
         val DOCTRINE_NOTES = listOf(
             "Membrane" to "The bar is one surface. Lift an app out and its neighbours are drawn towards the gap, nearest most, while the glass swells where it left, then springs back. A tap still ripples outwards. Membrana switching treats the arriving app as a skin whose edges bow against their own speed.",
             "Concentrato" to "While an app is carried out of the bar, everything else on the bar steps back. Drag fast and the drop guide sheds its outline, crease line and words, leaving the app and the place it will land. Fling the grid and its labels fall away, returning as it slows.",
-            "The Giulietta principle" to "Presence: Trim lets the bar rest as a fine line of trim. It wakes under your finger, the icons rising outwards from where you touched, and swelling as your finger slides past them. Lift on one to open it. The first touch only ever wakes it, so nothing opens by accident.",
+            "The Giulietta principle" to "In apps, Trim lets the bar rest as a fine line of trim. It wakes under your finger, the icons rising outwards from where you touched, and swelling as your finger slides past them. Lift on one to open it. The first touch only ever wakes it, so nothing opens by accident.",
         )
         val DESIGN_NOTES = listOf(
             "Smoked glass" to "Reads the screen beyond each of eight stretches of the bar. Dark over light content, light over dark, with a trace of the colour underneath.",
@@ -478,12 +479,12 @@ class MainActivity : Activity() {
             "Profile" to "Round is the capsule, its ends fully rounded. Slim is a lower, flatter slab with tighter corners: Bauhaus in its restraint, giving the screen back a few points.",
             "Live" to "Two ideas from the iPhone Duo's status column, taken only where a need puts them. Now playing gives the bar a new ability: the music that is playing, at the bar's outer end. The time and battery appear only when an app has hidden the status bar, because Samsung's own status bar cannot be moved, and a second clock beside it would be ornament no need put there. The waveform moves with the playing state, not the sound: the bar cannot hear the audio.",
             "Show on unfold" to "A bar out of sight is only found by remembering where you left it, and after a night folded nobody does. So with Hide or Trim, every unfold shows where the bar lives, then lets it rest again. There is no timer: it happens every time, so you always know what to expect. Leaving, the bar sinks into the edge it rests against, so every hide is a reminder of its place too.",
-            "Recede" to "A third presence, and Concentrato for the bar. While you scroll the app beneath, the bar steps back to a faint presence, easing a little smaller, so what you are reading has the screen. It returns unhurried once you stop, and at once if you touch it.",
+            "Recede" to "An In apps choice, and Concentrato for the bar. While you scroll the app beneath, the bar steps back to a faint presence, easing a little smaller, so what you are reading has the screen. It returns unhurried once you stop, and at once if you touch it.",
             "The entrance" to "After an unfold the bar does not simply appear. Once the screen is whole (Fold Motion tells the bar when its reveal has ended) the bar rises a little way from the edge it rests against on a long, soft ease, and its icons settle in from the middle outwards. No bounce: an invitation.",
             "One landing" to "Every switch drawn by the bar lands on one deceleration and stops exactly on the app's own window, pixel for pixel, so the hand-over to the live app is a cut you cannot see. Nothing overshoots and comes back. What you leave recedes into the bar's dark ground as the new app comes forward.",
             "Fuoco and Onda" to "The depth switches. The screen you are leaving falls out of focus behind the arriving app. Fuoco is a focus pull: the app rises soft from the icon and sharpens as it fills the screen. Onda opens as a circle from the icon, its rim a fine meniscus. Cycle within 700ms of the last switch and Concentrato makes each one quicker and shallower.",
             "Carosello" to "One UI's card carousel, redrawn to the mandate. The screen you leave lifts off as a card and slides aside; the new app follows in as a card, its icon first on the bar's dark glass and then its picture, and opens out to land exactly on its own window. One UI settles its cards on a spring; Carosello moves all three stages on one deceleration, overlapping so the eye reads one gesture, and nothing moves once it lands.",
-            "Advanced tuning" to "One UI's floating taskbar lets you tune how it shows and hides. So does this bar: its starting length and height, the duration, and the spring's stiffness and damping, with a reaction delay, call sensitivity and holding time for the Hide presence. Out of the box the spring is critically damped, so the bar arrives without a bounce; tune it lower and it will bounce, by your choice, not ours.",
+            "Advanced tuning" to "One UI's floating taskbar lets you tune how it shows and hides. So does this bar: its starting length and height, the duration, and the spring's stiffness and damping, with a reaction delay, call sensitivity and holding time for Hide. Out of the box the spring is critically damped, so the bar arrives without a bounce; tune it lower and it will bounce, by your choice, not ours.",
             "Lama" to "The Alfa light line as a switch, and the bar's signature. Two points of light race out of the icon along the bar, drawing a fine champagne blade, and the slit opens hard behind them, uncovering the app in place. Each lip carries a thin line of light onto the app and a faint shadow onto the cover. The blade always runs along the bar, wherever it sits.",
             "No colour blocks" to "Until the bar has a picture of an app, its motion is carried by light over the bar's own dark glass, never a block of the app's colour. Pictures are kept privately in the app's own storage, so they survive a restart; secure screens such as banking apps are never kept.",
             "Reveal and Grow" to "Drawn by the bar, because One UI ignores Android's classic launch animations and plays its own task switch. Reveal: nothing scales; a window widens from the icon and uncovers the app in place. Grow: the whole app at its true proportions scales up out of the icon.",

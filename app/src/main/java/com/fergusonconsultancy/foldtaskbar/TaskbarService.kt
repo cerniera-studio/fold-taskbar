@@ -80,8 +80,17 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     @Volatile private var onScreenLeft: Map<String, Int> = emptyMap()
     @Volatile private var onScreenBounds: Map<String, Rect> = emptyMap()
     @Volatile private var keyboardTop: Int? = null
+    /** Set when the bar is called back while a keyboard is up: the call wins until a keyboard next comes up. */
+    @Volatile private var keyboardOverride = false
     @Volatile private var systemInFront = false
     @Volatile private var systemTitle: String? = null
+    /**
+     * 2 Nov 2026, the log showed the bar hidden for "a system panel (untitled)" until it was called
+     * back from the Quick Settings tile, twice in three minutes. A call-back is the owner saying
+     * nothing is in front that matters: that panel is ignored for as long as it stays listed.
+     */
+    @Volatile private var systemId = -1
+    @Volatile private var ignoredSystemId = -1
     private var hidePackages: Set<String> = emptySet()
     /** The home apps (launchers). The bar belongs here more than anywhere. */
     @Volatile private var homes: Set<String> = emptySet()
@@ -183,9 +192,12 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                 Prefs.autoHide(this) && !revealed -> "auto-hide"
                 receded -> "receding"
                 !barOn -> "hidden (${hideReason()})"
+                keyboardTop != null -> "beside the keyboard"
                 else -> "already in view"
             }
             if (Prefs.collapsed(this) != null) expand()
+            if (keyboardTop != null) keyboardOverride = true
+            if (systemInFront) { ignoredSystemId = systemId; systemInFront = false }
             returnFromRecede(gentle = false)
             if (Prefs.autoHide(this)) { revealed = true; scheduleAutoHide() }
             layoutKey = ""
@@ -399,11 +411,21 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         var system = false
         var statusSeen = false
         var unreadableFront = false
+        var seenIgnored = false
         val screenW = liveBounds().width()
         val r = Rect()
         for (w in list) {
             when (w.type) {
-                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> { w.getBoundsInScreen(r); imeTop = r.top }
+                // 1 Nov 2026, the bar vanished in an app and did not come back, even from the
+                // Quick Settings tile, after SwiftKey was closed. A keyboard can leave its window
+                // listed when it is down (a toolbar strip, or nothing showing), and the bar went on
+                // stepping aside for it. Now only a keyboard actually up counts: tall enough to be
+                // keys, showing something, and not parked at the screen's foot
+                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> {
+                    w.getBoundsInScreen(r)
+                    val showing = runCatching { w.root?.isVisibleToUser }.getOrNull() != false
+                    if (showing && r.height() >= dp(120) && r.top < liveBounds().bottom - dp(48)) imeTop = r.top
+                }
                 // 30 Oct 2026, the log showed the bar hidden for "a system panel" on the home
                 // screen and after unlocking or unfolding. Any focused system window counted,
                 // including small ones One UI focuses in passing. Now only a panel that covers a
@@ -413,13 +435,18 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     // When an app hides it for full screen, it is no longer listed
                     w.getBoundsInScreen(r)
                     if (r.top <= 2 && r.height() in 1..(statusPx + dp(10)) && r.width() * 2 >= screenW) statusSeen = true
+                } else if (w.id == ignoredSystemId) {
+                    seenIgnored = true
                 } else {
                     w.getBoundsInScreen(r)
                     val screenArea = (liveBounds().width().toLong() * liveBounds().height()).coerceAtLeast(1)
                     // ...and only one actually showing something. One UI can leave the lock
                     // screen's full-screen window focused but empty after unlocking
                     val showing = runCatching { w.root?.let { it.isVisibleToUser && it.childCount > 0 } }.getOrNull() ?: false
-                    if (showing && r.width().toLong() * r.height() * 4 >= screenArea) { system = true; systemTitle = w.title?.toString() }
+                    if (showing && r.width().toLong() * r.height() * 4 >= screenArea) {
+                        system = true; systemId = w.id
+                        systemTitle = "${w.title ?: "untitled"}, ${r.toShortString()}"
+                    }
                 }
                 AccessibilityWindowInfo.TYPE_APPLICATION -> {
                     // Some windows, launchers among them, will not give up their contents. For the
@@ -434,8 +461,18 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                 }
             }
         }
+        if ((imeTop == null) != (keyboardTop == null)) {
+            // A keyboard coming up afresh ends any call-back that overrode the last one
+            if (imeTop != null) keyboardOverride = false
+            val up = imeTop != null
+            main.post {
+                EventLog.add(this, if (up) "Keyboard up: the bar waits as a tab if it would cover it" else "Keyboard down")
+                hosts.indices.forEach(::place)
+            }
+        }
         keyboardTop = imeTop
         systemInFront = system
+        if (!seenIgnored) ignoredSystemId = -1
         if (statusSeen) statusReadable = true
         // Only an app in front can hide the status bar; a moment with no app read is a transition
         if (found.isNotEmpty()) statusVisible = statusSeen
@@ -682,16 +719,26 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val collapsed = Prefs.collapsed(this)
         val panelsOpen = drawer.isOpen || menuWindow != null
         val autoHidden = collapsed == null && Prefs.autoHide(this) && !revealed && !panelsOpen && !hubInFull()
-        if (collapsed != null) showTab(collapsed) else removeTab()
+        // While a keyboard is up and would cover the bar, the bar steps aside but never vanishes:
+        // it waits as a tab on the right edge, clear of the text field above the keyboard, and a
+        // tap brings it back above the keys (2 Nov 2026)
+        if (collapsed != null) showTab(collapsed) else if (keyboardHidesBar()) showTab(KEYBOARD_TAB) else removeTab()
         if (autoHidden) showStrips() else removeStrips()
         setBarOn(true)
+    }
+
+    private fun keyboardHidesBar(): Boolean {
+        val top = keyboardTop ?: return false
+        if (keyboardOverride || !barOn) return false
+        return hosts.any { h -> (h.layoutParams as? WindowManager.LayoutParams)?.let { it.y + h.height - dp(10) > top } ?: false }
     }
 
     /** Whether one capsule should be on screen right now. */
     private fun hostWanted(i: Int): Boolean {
         if (!barOn || Prefs.collapsed(this) != null) return false
         if (Prefs.autoHide(this) && !revealed && !drawer.isOpen && menuWindow == null && !hubInFull()) return false
-        // The keyboard only pushes aside a capsule it would actually cover
+        // The keyboard only pushes aside a capsule it would actually cover, and never one just called back
+        if (keyboardOverride) return true
         val top = keyboardTop ?: return true
         val lp = hosts[i].layoutParams as? WindowManager.LayoutParams ?: return true
         return lp.y + hosts[i].height - dp(10) <= top
@@ -1018,7 +1065,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val (w, h) = hostSize(host)
         val pad = dp(10)
         val x = (spot.fx * s.width() - w / 2f).toInt().coerceIn(-pad, s.width() - w + pad)
-        val y = (spot.fy * s.height() - h / 2f).toInt().coerceIn(statusInset() - pad, s.height() - h + pad)
+        var y = (spot.fy * s.height() - h / 2f).toInt().coerceIn(statusInset() - pad, s.height() - h + pad)
+        // Called back over a keyboard: it sits on the keyboard's top edge, not over the keys
+        val kb = keyboardTop
+        if (keyboardOverride && kb != null && y + h - pad > kb) y = (kb - h + pad).coerceAtLeast(statusInset() - pad)
         if (lp.x != x || lp.y != y) {
             lp.x = x; lp.y = y
             runCatching { wm.updateViewLayout(host, lp) }
@@ -1245,13 +1295,18 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
                     val s = screen()
                     val upright = c.first == 'L' || c.first == 'R'
-                    if (moved) {
+                    val transient = Prefs.collapsed(this) == null
+                    if (moved && !transient) {
                         val along = if (upright) (lp.y + v.height / 2f) / s.height() else (lp.x + v.width / 2f) / s.width()
                         Prefs.setCollapsed(this, c.first to along)
                         sampleSoon(120)
-                    } else if (e.actionMasked == MotionEvent.ACTION_UP) {
+                    } else if (!moved && e.actionMasked == MotionEvent.ACTION_UP) {
                         v.tick()
-                        expand()
+                        if (transient) {
+                            keyboardOverride = true
+                            EventLog.add(this, "Called back from beside the keyboard (tab)")
+                            removeTab(); apply()
+                        } else expand()
                     }
                 }
             }
@@ -1263,6 +1318,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             .setDuration(Curves.OPEN_MS).setInterpolator(Curves.OPEN).start()
         sampleSoon(120)
     }
+
+    private val KEYBOARD_TAB = 'R' to 0.4f
 
     private fun removeTab() {
         remove(tab); tab = null
@@ -1912,14 +1969,19 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun onAllAppsHeld(view: View) {
         closePanels()
         (view as? GlyphView)?.animateOpen(0f, Curves.CLOSE_MS, Curves.CLOSE)
-        val auto = Prefs.autoHide(this)
-        showMenu("Taskbar", listOf(
-            *(splitPair()?.let { (l, r) ->
-                arrayOf("Save ${apps.entry(l)?.label} + ${apps.entry(r)?.label} as a pair" to {
-                    closeMenu(); Prefs.addPair(this, l, r)
-                    EventLog.add(this, "Pair saved from the screen: ${apps.entry(l)?.label} + ${apps.entry(r)?.label}")
-                })
-            } ?: emptyArray()),
+        // The menu and settings say the same thing (1 Nov 2026): the In apps choice here is the
+        // In apps choice in settings, same words, same order, the current one marked
+        val presences = Presence.entries
+        val pairRow = splitPair()?.let { (l, r) ->
+            listOf("Save ${apps.entry(l)?.label} + ${apps.entry(r)?.label} as a pair" to {
+                closeMenu(); Prefs.addPair(this, l, r)
+                EventLog.add(this, "Pair saved from the screen: ${apps.entry(l)?.label} + ${apps.entry(r)?.label}")
+            })
+        } ?: emptyList()
+        showMenu("Taskbar", pairRow, view, MenuChoice("In apps", presences.map { it.label }, presences.indexOf(Prefs.presence(this))) {
+            closeMenu(); revealed = false; Prefs.setPresence(this, presences[it])
+            EventLog.add(this, "In apps set from the bar's menu: ${presences[it].label}")
+        }, listOf(
             "Collapse to a tab" to {
                 closeMenu()
                 hosts.firstOrNull()?.let { host ->
@@ -1931,9 +1993,6 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                     val along = if (edge == 'L' || edge == 'R') cy / s.height() else cx / s.width()
                     collapseTo(edge, along.coerceIn(0.08f, 0.92f))
                 }
-            },
-            (if (auto) "Keep the taskbar showing" else "Auto-hide the taskbar") to {
-                closeMenu(); Prefs.setAutoHide(this, !auto); revealed = false
             },
             // Show on unfold: the same choice, in the same words, as in Taskbar settings. Shown
             // only where it applies, and the menu opens again on the new value
@@ -1947,7 +2006,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
                 closeMenu()
                 startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             },
-        ), view)
+        ))
     }
 
     /** The two apps currently sharing the screen, left first, if there are two. */
@@ -2539,9 +2598,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         showMenu(label, rows, anchor)
     }
 
-    private fun showMenu(title: String, rows: List<Pair<String, () -> Unit>>, anchor: View) {
+    private fun showMenu(title: String, rows: List<Pair<String, () -> Unit>>, anchor: View,
+                         choice: MenuChoice? = null, after: List<Pair<String, () -> Unit>> = emptyList()) {
         closeMenu()
-        val menu = ActionMenu(this, Prefs.finish(this), title, rows)
+        val menu = ActionMenu(this, Prefs.finish(this), title, rows, choice, after)
         val host = outsideCloses(shadowHost(menu)) { closeMenu() }
         host.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val loc = IntArray(2).also { anchor.getLocationOnScreen(it) }
