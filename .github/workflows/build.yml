@@ -39,16 +39,16 @@ jobs:
           name: FoldTaskbar-apk
           path: app/build/outputs/apk/debug/*.apk
 
-      # Each build on main is published as a release with the APK, so it installs from a plain link
+      # Each build is published with the APK, so it installs from a plain link (and from Officina):
+      # builds on main as releases, other branches as pre-releases to try before merging
       - name: Name the APK
-        if: github.ref == 'refs/heads/main'
         run: cp app/build/outputs/apk/debug/app-debug.apk FoldTaskbar.apk
 
       - name: Publish release
-        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          name: Fold Taskbar build ${{ github.run_number }}
+          name: Fold Taskbar build ${{ github.run_number }}${{ github.ref != 'refs/heads/main' && format(' ({0})', github.ref_name) || '' }}
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
           files: FoldTaskbar.apk
