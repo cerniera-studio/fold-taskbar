@@ -31,6 +31,11 @@ class MainActivity : Activity() {
     private lateinit var accessRow: Row
     private lateinit var accessEnd: TextView
     private lateinit var batteryOptions: View
+    private lateinit var spiaRows: List<View>
+    private lateinit var peopleRow: Row
+    private lateinit var workRow: Row
+    private lateinit var arrivingRow: Row
+    private lateinit var riservaSection: View
     private lateinit var presenceDetail: TextView
     private lateinit var presencePicker: Segmented
     private lateinit var recedeOptions: LinearLayout
@@ -158,7 +163,7 @@ class MainActivity : Activity() {
         // ---- Live (3 Nov 2026): two ideas from the iPhone Duo's status column, where a need puts them
         screen.section("Live")
         accessEnd = endValue("")
-        accessRow = Row(this, "Music access", "", accessEnd) {
+        accessRow = Row(this, "Notification access", "", accessEnd) {
             if (!MediaListener.granted(this)) MediaListener.ask(this)
         }
         screen.add(Card(this).apply {
@@ -174,6 +179,31 @@ class MainActivity : Activity() {
             Triple(st.label, st.detail, batterySwatch(st))
         }, styles.indexOf(Prefs.batteryStyle(this))) { Prefs.setBatteryStyle(this, styles[it]) })
         screen.add(batteryOptions, px(18))
+
+        // ---- Spia (16 Nov 2026): a car's tell-tale lamps in the bar's trim
+        screen.section("Spia")
+        peopleRow = Row(this, "People", "", endValue("Edit  ›", Kit.CHAMPAGNE)) { editPeople() }
+        workRow = Row(this, "Work apps", "", endValue("Choose  ›", Kit.CHAMPAGNE)) { chooseApps(Lamp.WORK) }
+        arrivingRow = Row(this, "Arriving apps", "", endValue("Choose  ›", Kit.CHAMPAGNE)) { chooseApps(Lamp.ARRIVING) }
+        val familyRow = Row(this, "Cerniera apps", Lamp.FAMILY.detail,
+            Toggle(this, Prefs.spiaFamily(this)) { Prefs.setSpiaFamily(this, it) })
+        spiaRows = listOf(lampKey(), peopleRow, workRow, arrivingRow, familyRow)
+        screen.add(Card(this).apply {
+            row(Row(this@MainActivity, "Spia", "Small coloured lamps at the bar's outer end, one for each person or kind of thing you choose. Each stays lit until its notification is dealt with. Tap the lamps for their lines; open one, or clear it",
+                Toggle(this@MainActivity, Prefs.spia(this@MainActivity)) { Prefs.setSpia(this@MainActivity, it); refresh() }))
+            spiaRows.forEach { row(it) }
+        })
+
+        // ---- Riserva (16 Nov 2026): only once the Riserva app is installed
+        riservaSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(eyebrow("Riserva"))
+            addView(Card(this@MainActivity).apply {
+                row(Row(this@MainActivity, "Read the battery for Riserva", "Riserva works out hours left on each screen from how you use them. The bar is always running, so it notes which screen is on and the charge left, and hands each reading to Riserva. Nothing goes anywhere else",
+                    Toggle(this@MainActivity, Prefs.riservaMeter(this@MainActivity)) { Prefs.setRiservaMeter(this@MainActivity, it) }))
+            })
+        }
+        screen.add(riservaSection, px(18))
 
         // ---- Motion
         screen.section("App switching")
@@ -278,9 +308,15 @@ class MainActivity : Activity() {
         setupNote.text = if (stopped) "Android has stopped the bar (force stopping the app does this). Open Accessibility, switch Fold Taskbar off, then on again." else "Fold Taskbar runs as an accessibility service, so Android asks you to switch it on once."
         // Permissions show their state and only ask when something is missing
         val access = MediaListener.granted(this)
-        accessRow.visibility = if (Prefs.liveMusic(this)) View.VISIBLE else View.GONE
+        accessRow.visibility = if (Prefs.liveMusic(this) || Prefs.spia(this)) View.VISIBLE else View.GONE
         batteryOptions.visibility = if (Prefs.fullScreenStatus(this)) View.VISIBLE else View.GONE
-        accessRow.setSub(if (access) "Android lets the bar see which music is playing. Nothing else is read" else "Android only shows which music is playing to apps allowed to read notifications. The bar uses it for that alone")
+        accessRow.setSub(if (access) "Android lets the bar see which music is playing and light Spia's lamps. Lamps are worked out in memory; nothing is kept or sent" else "Now playing and Spia need Android's notification access. Lamps are worked out in memory; nothing is kept or sent")
+        spiaRows.forEach { it.visibility = if (Prefs.spia(this)) View.VISIBLE else View.GONE }
+        val people = Prefs.spiaPeople(this)
+        peopleRow.setSub(if (people.isEmpty()) "No one yet. Add the people whose messages should light a rosso lamp" else people.joinToString(", "))
+        workRow.setSub(appsSummary(Lamp.WORK))
+        arrivingRow.setSub(appsSummary(Lamp.ARRIVING))
+        riservaSection.visibility = if (runCatching { packageManager.getPackageInfo(Meter.RISERVA, 0) }.isSuccess) View.VISIBLE else View.GONE
         accessEnd.text = if (access) "Allowed" else "Allow  ›"
         accessEnd.setTextColor(if (access) Kit.GOOD else Kit.CHAMPAGNE)
         TaskbarService.instance?.liveCheck()
@@ -318,6 +354,71 @@ class MainActivity : Activity() {
         val mine = ComponentName(this, TaskbarService::class.java).flattenToString()
         val list = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         return list.split(':').any { it.equals(mine, ignoreCase = true) }
+    }
+
+    // ---- Spia's choices ---------------------------------------------------------------------
+
+    /** The four lamps and what each means, drawn as they sit on the bar. */
+    private fun lampKey(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(px(18), px(12), px(18), px(12))
+        Lamp.entries.forEach { lamp ->
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, px(4), 0, px(4))
+                addView(View(this@MainActivity).apply { background = rounded(lamp.colour, px(4).toFloat()) }, LinearLayout.LayoutParams(px(16), px(9)).apply { marginEnd = px(14) })
+                addView(text(lamp.label, 14.5f, Kit.INK, 500), LinearLayout.LayoutParams(px(84), -2))
+                addView(text(lamp.detail, 13f, Kit.MUTED), LinearLayout.LayoutParams(0, -2, 1f))
+            })
+        }
+    }
+
+    private fun appsSummary(kind: Lamp): String {
+        val chosen = Prefs.spiaApps(this, kind)
+        val names = chosen.mapNotNull { pkg -> runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }.sorted()
+        return if (names.isEmpty()) "None installed yet" else names.joinToString(", ")
+    }
+
+    /** People: one name a line, matched against message senders and, failing that, the title. */
+    private fun editPeople() {
+        val fields = mutableListOf<android.widget.EditText>()
+        Sheet.show(this, "People", onClose = { refresh() }, action = "Save" to { sheet ->
+            Prefs.setSpiaPeople(this, fields.map { it.text.toString() })
+            sheet.dismiss()
+        }) { sheet ->
+            sheet.body.addView(text("A message from anyone named here lights a rosso lamp of their own. Use the name as it appears in the notification, for example as saved in Contacts or Teams.", 13.5f, Kit.MUTED).apply { setPadding(0, 0, 0, px(12)) })
+            val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            fun addField(v: String) {
+                val f = field("A name", v)
+                fields += f
+                list.addView(f, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = px(8) })
+            }
+            Prefs.spiaPeople(this).forEach(::addField)
+            addField("")
+            sheet.body.addView(list)
+            sheet.body.addView(primary("Add another", filled = false) { addField(""); fields.last().requestFocus() }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(6) })
+        }
+    }
+
+    /** Which apps light a kind's lamp: every app with a launcher icon, chosen ones first. */
+    private fun chooseApps(kind: Lamp) {
+        val chosen = Prefs.spiaApps(this, kind).toMutableSet()
+        Sheet.show(this, "${kind.label} apps", onClose = { refresh() }, action = "Save" to { sheet ->
+            Prefs.setSpiaApps(this, kind, chosen); sheet.dismiss()
+        }) { sheet ->
+            sheet.body.addView(text(kind.detail + ". Notifications from these apps light it.", 13.5f, Kit.MUTED).apply { setPadding(0, 0, 0, px(12)) })
+            val launcher = getSystemService(android.content.pm.LauncherApps::class.java)
+            val all = launcher.getActivityList(null, android.os.Process.myUserHandle())
+                .map { it.applicationInfo.packageName to it.label.toString() }.distinctBy { it.first }
+                .filter { it.first != packageName }
+                .sortedWith(compareBy<Pair<String, String>> { it.first !in chosen }.thenBy { it.second.lowercase() })
+            val card = Card(this)
+            all.forEach { (pkg, label) ->
+                card.row(Row(this, label, null, Toggle(this, pkg in chosen) { on -> if (on) chosen += pkg else chosen -= pkg }))
+            }
+            sheet.body.addView(card)
+        }
     }
 
     /** A control with its name above it. */
@@ -476,6 +577,7 @@ class MainActivity : Activity() {
             "Rosso lacquer" to "Alfa red that keeps its contrast: oxblood over bright screens, a brighter rosso over dark ones. Ivory ink and a champagne light throughout.",
             "Avorio, Carbonio, Ceramica" to "Three more adaptive finishes. Avorio is the Giulietta's ivory leather, always the light one, deepening to warm stone over bright screens, with rosso marking the app in use. Carbonio is Bauhaus restraint, always the dark one, lifting to charcoal with a brighter edge over dark screens so its outline holds. Ceramica is Gaudí's glazed tile: each stretch of the bar fires the hue beneath it as glaze, pale over dark screens and deep over bright.",
             "One finish, everywhere" to "The app grid wears whatever the bar is wearing, adapted the same way to the screen it opens over. Over a dark screen smoked glass turns to light glass with dark ink in the grid exactly as it does on the bar.",
+            "Spia" to "The tell-tale lamps of an Alfa binnacle: no labels, colour alone. Rosso for the people you name, amber for work, green for something arriving, champagne for the Cerniera apps. They stand in columns of up to three and grow into the bar, so the icons beside them ease apart instead of jumping. Each stays lit until its notification is dealt with, here, in the shade or in its app. While an app has the whole screen they fold down to one pip in the colour of the most urgent lamp.",
             "Profile" to "Round is the capsule, its ends fully rounded. Slim is a lower, flatter slab with tighter corners: Bauhaus in its restraint, giving the screen back a few points.",
             "Live" to "Two ideas from the iPhone Duo's status column, taken only where a need puts them. Now playing gives the bar a new ability: the music that is playing, at the bar's outer end. The time and battery appear only when an app has hidden the status bar, because Samsung's own status bar cannot be moved, and a second clock beside it would be ornament no need put there. The waveform moves with the playing state, not the sound: the bar cannot hear the audio.",
             "Show on unfold" to "A bar out of sight is only found by remembering where you left it, and after a night folded nobody does. So with Hide or Trim, every unfold shows where the bar lives, then lets it rest again. There is no timer: it happens every time, so you always know what to expect. Leaving, the bar sinks into the edge it rests against, so every hide is a reminder of its place too.",
@@ -496,6 +598,7 @@ class MainActivity : Activity() {
             "Switching" to "Tap an app to switch to it. Hold an app for its menu: pin, pair and more.",
             "Split screen and pop-ups" to "Press an app and slide it out of the bar for a split screen, or to the centre for a pop-up. In the grid, hold, then slide.",
             "Moving the bar" to "Hold the grid button or the grip and slide. Let go near an edge and it docks, upright on the sides. Near the crease it centres on it. Throw it mostly off the screen to collapse it to a tab.",
+            "Spia" to "Tap or hold the lamps for their lines, the person or app first. Tap a line to open it as its notification would; Clear puts a lamp out by clearing its notifications.",
             "Icon packs" to "Icon Pack Studio packs need exporting with the free Icon Pack Studio Exporter before any app other than Smart Launcher can read them.",
         )
     }

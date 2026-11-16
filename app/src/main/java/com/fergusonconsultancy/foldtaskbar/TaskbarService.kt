@@ -158,6 +158,9 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             main.removeCallbacks(applyNow); main.post(applyNow)
         }
         liveCheck()
+        Spia.watch(spiaChanged)
+        meter = Meter(this) { isMainScreen() }
+        meter.start()
         drawer = AppDrawer(this, wm, apps, onOpenApp = { pkg, v -> fromGrid(pkg, v) }, onHoldApp = { pkg, v -> openMenu(pkg, v) }, drag = this)
         // The bar now stays on the home screen too; only system surfaces such as the
         // notification shade push it aside.
@@ -168,7 +171,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, main)
         running = true
         instance = this
-        apps.onPackagesChanged { warmApps(rebuildList = true) }
+        apps.onPackagesChanged { warmApps(rebuildList = true); if (::meter.isInitialized) meter.start() }
         warmApps(rebuildList = false)
         EventLog.add(this, "Taskbar started. Home app: ${apps.homePackage() ?: "unknown"}")
         useAccessibilityButton()
@@ -232,6 +235,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     override fun onDestroy() {
         if (::nowPlaying.isInitialized) nowPlaying.stop()
+        Spia.unwatch(spiaChanged)
+        if (::meter.isInitialized) meter.stop()
         running = false
         instance = null
         runCatching { getSystemService(android.hardware.SensorManager::class.java)?.unregisterListener(this) }
@@ -288,6 +293,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun onSharedPreferenceChanged(p: SharedPreferences?, key: String?) {
         if (key == "presence") main.post { restIfTrim(); listenForScrolls() }
         if (key == "live_music") main.post { liveCheck() }
+        if (key != null && key.startsWith("spia")) main.post { liveCheck(); Spia.listener?.relight() }
+        if (key == "riserva_meter" && ::meter.isInitialized) main.post { meter.start() }
         if (key == Prefs.ICON_PACK) {
             // New icons everywhere: rebuild the bar and reload the grid
             layoutKey = ""
@@ -714,7 +721,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             .filter { (l, r) -> l in onScreen && r in onScreen }
             .map { (l, r) -> Slot.AppPair(l, r).key }
         val track = liveTrack()
-        capsules.forEachIndexed { i, c -> c.setTrack(track); c.show(groups.getOrElse(i) { emptyList() }, active) }
+        val lamps = spiaLamps()
+        capsules.forEachIndexed { i, c -> c.setTrack(track); c.setLamps(lamps, statusShowing); c.show(groups.getOrElse(i) { emptyList() }, active) }
 
         val collapsed = Prefs.collapsed(this)
         val panelsOpen = drawer.isOpen || menuWindow != null
@@ -829,6 +837,61 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     fun liveCheck() {
         if (!::nowPlaying.isInitialized) return
         if (Prefs.liveMusic(this) && MediaListener.granted(this)) nowPlaying.start() else nowPlaying.stop()
+        // One UI can let the listener go to save battery; the bar is always running, so it asks back
+        if (Prefs.spia(this)) MediaListener.rebind(this)
+    }
+
+    // ---- Spia (16 Nov 2026): tell-tale lamps in the trim --------------------------------------
+
+    private lateinit var meter: Meter
+    private var hadLamps = false
+    private var litCount = 0
+
+    private fun spiaLamps(): List<Lit> = if (Prefs.spia(this)) Spia.lamps else emptyList()
+
+    private val spiaChanged: () -> Unit = {
+        val now = spiaLamps()
+        if (now.isEmpty() && hadLamps) {
+            // The last lamp went out: the cluster shrinks into the trim, then the bar closes up
+            var left = capsules.size
+            if (left == 0) { main.removeCallbacks(applyNow); main.post(applyNow) }
+            capsules.forEach { c -> c.recedeLamps { if (--left == 0) { main.removeCallbacks(applyNow); main.post(applyNow) } } }
+        } else {
+            capsules.forEach { it.setLamps(now, statusShowing) }
+            main.removeCallbacks(applyNow); main.post(applyNow)
+        }
+        if (now.size != litCount)
+            EventLog.add(this, if (now.isEmpty()) "Spia: all lamps out" else "Spia: ${now.size} lit (${now.joinToString { it.kind.label.lowercase() }})")
+        litCount = now.size
+        hadLamps = now.isNotEmpty()
+    }
+
+    override fun onSpia(view: View) {
+        closePanels()
+        onBarTouched()
+        val lamps = spiaLamps()
+        if (lamps.isEmpty()) return
+        val rows: List<Pair<CharSequence, () -> Unit>> = lamps.map { lit ->
+            val s = android.text.SpannableStringBuilder()
+            s.append("●  ")
+            s.setSpan(android.text.style.ForegroundColorSpan(lit.kind.colour), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            val whoStart = s.length
+            s.append(lit.who)
+            s.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), whoStart, s.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (lit.line.isNotBlank()) s.append("  ").append(lit.line)
+            (s as CharSequence) to { closeMenu(); Spia.open(this, lit) }
+        }
+        val after = buildList<Pair<CharSequence, () -> Unit>> {
+            if (Spia.listener != null) {
+                lamps.forEach { lit -> add("Clear ${lit.who}" to { closeMenu(); Spia.clear(lit) }) }
+                if (lamps.size > 1) add("Clear all" to { closeMenu(); Spia.clearAll(); EventLog.add(this@TaskbarService, "Spia: cleared all lamps") })
+            }
+            add("Spia settings" to {
+                closeMenu()
+                startActivity(Intent(this@TaskbarService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            })
+        }
+        showMenu("Spia", rows, view, null, after)
     }
 
     private fun liveTrack(): Track? = if (::nowPlaying.isInitialized && Prefs.liveMusic(this)) nowPlaying.track else null
@@ -1857,7 +1920,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             .filter { it !in pinned && it !in noRecents && apps.isLaunchable(it) }
             .take(Prefs.recentCount(this))
         // Live sits at the bar's outer end, as the Duo's column sits at the screen's edge
-        val live = listOfNotNull(Slot.Live.takeIf { liveTrack() != null }, Slot.Status.takeIf { wantStatus() })
+        // Spia's lamps sit with them, at the end nearest the clock (16 Nov 2026)
+        val live = listOfNotNull(Slot.Spia.takeIf { spiaLamps().isNotEmpty() }, Slot.Live.takeIf { liveTrack() != null }, Slot.Status.takeIf { wantStatus() })
         return when (shape) {
             Shape.PAIR -> listOf(
                 (listOf(Slot.AllApps) + pinned.map { Slot.App(it) } + pairs).take(maxSlots),
@@ -2598,8 +2662,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         showMenu(label, rows, anchor)
     }
 
-    private fun showMenu(title: String, rows: List<Pair<String, () -> Unit>>, anchor: View,
-                         choice: MenuChoice? = null, after: List<Pair<String, () -> Unit>> = emptyList()) {
+    private fun showMenu(title: String, rows: List<Pair<CharSequence, () -> Unit>>, anchor: View,
+                         choice: MenuChoice? = null, after: List<Pair<CharSequence, () -> Unit>> = emptyList()) {
         closeMenu()
         val menu = ActionMenu(this, Prefs.finish(this), title, rows, choice, after)
         val host = outsideCloses(shadowHost(menu)) { closeMenu() }

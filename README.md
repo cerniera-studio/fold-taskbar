@@ -27,6 +27,21 @@ A taskbar for the Galaxy Z Fold 8 Ultra's main screen that works with any launch
 - **Adaptive pill:** the active-app light reads the glass beneath it and takes the tone that stands out, ringed in the opposite tone.
 - **Membrana switching:** the app arrives as a membrane whose edges bow against their own speed and snap taut.
 
+## Spia (16 Nov 2026)
+
+A car's tell-tale lamps in the bar's trim, at its outer end beside now playing. One small lamp per person or kind of thing, lit until its notification is dealt with (opened, cleared here, swiped in the shade or read in its app):
+
+- **Rosso:** one lamp for each person you name, matched on message senders, the people a notification lists, or failing that its title.
+- **Amber:** work apps (Teams, Outlook, Slack and Gmail to start; choose in Settings).
+- **Green:** something arriving: rides and deliveries (Uber, Uber Eats, Deliveroo, Just Eat, Amazon, Royal Mail, DPD and Evri to start). Their ongoing trip notifications count.
+- **Champagne:** the Cerniera apps (a Nodo knot falling due, Curva's kick-off).
+
+Tap or hold the lamps for one line each: tap a line to open it, or clear a lamp. While an app has the whole screen the lamps fold down to one pip. Spia uses the same notification access as now playing; the lamps are worked out in memory from the notifications showing, and nothing is kept or sent.
+
+## Riserva's meter (16 Nov 2026)
+
+When the Riserva app is installed, the bar notes which screen is on (main, cover or off), the charge left and the current, on every change and every five minutes while a screen is on, and hands each reading to Riserva. It does nothing when Riserva is absent, and can be switched off in Settings.
+
 ## Settings
 
 One screen in the apps' own palette and type (Italiana and Jost, bundled under the Open Font Licence): tiles for choices you compare, segmented controls for degrees, switches for on and off, and the guide and event log folded away at the foot.
@@ -42,7 +57,7 @@ The **Build APK** workflow runs on every push. Open the latest green run under *
 
 ## Why an accessibility service
 
-It is the only way an ordinary app can draw over every other app, know which app is on screen and ask for split screen. The service listens for window changes only. It does not read text or content inside apps.
+It is the only way an ordinary app can draw over every other app, know which app is on screen and ask for split screen. The service listens for window changes only. It does not read text or content inside apps. (Spia's lamps come from notification access, a separate permission you grant in Settings.)
 
 ## Limits
 
