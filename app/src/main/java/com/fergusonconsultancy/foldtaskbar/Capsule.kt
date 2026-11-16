@@ -22,6 +22,8 @@ sealed interface Slot {
     object Live : Slot
     /** The time and the battery, only while an app has hidden Android's status bar. */
     object Status : Slot
+    /** Spia (16 Nov 2026): the tell-tale lamps, while any is lit. */
+    object Spia : Slot
     data class App(val pkg: String) : Slot
     data class AppPair(val left: String, val right: String) : Slot { val key get() = "pair:$left|$right" }
 }
@@ -35,6 +37,7 @@ interface CapsuleActions {
     fun onPairHeld(left: String, right: String, view: View)
     fun onLive(view: View)
     fun onLiveHeld(view: View)
+    fun onSpia(view: View)
 }
 
 /** How many stretches of the bar adapt their tone separately. */
@@ -63,6 +66,18 @@ class Capsule(
     private var grip: GlyphView? = null
     private var live: LiveView? = null
     private var status: StatusView? = null
+    private var spia: SpiaView? = null
+    private var spiaLamps: List<Lit> = emptyList()
+    private var spiaCompact = false
+
+    /** Gives the lamp cluster its lamps; [compact] folds it to one pip (an app has the whole screen). */
+    fun setLamps(l: List<Lit>, compact: Boolean) {
+        spiaLamps = l; spiaCompact = compact
+        spia?.setLamps(l, compact)
+    }
+
+    /** Lets the cluster shrink back into the trim, then calls [done]; at once if there is none. */
+    fun recedeLamps(done: () -> Unit) = spia?.recede(done) ?: done()
     private var liveTrack: Track? = null
     private var liveIcon: android.graphics.drawable.Drawable? = null
 
@@ -324,6 +339,7 @@ class Capsule(
         grip?.let { it.setInk(inks[zoneOf(it)]) }
         live?.let { it.setGlow(glows[zoneOf(it)]) }
         status?.let { it.setInk(inks[zoneOf(it)]) }
+        spia?.let { it.setGlass(luminance(fills[zoneOf(it)]) < 0.5f) }
         dividers.forEach { it.setBackgroundColor((inks[zoneOf(it)] and 0x00FFFFFF) or 0x30000000) }
         indicators.values.forEach { v ->
             val frame = v.parent as? View ?: v
@@ -595,6 +611,7 @@ class Capsule(
         grip = null
         live = null
         status = null
+        spia = null
         slots.forEachIndexed { i, slot ->
             val v = when (slot) {
                 Slot.AllApps -> glyph(Glyph.GRID) { actions.onAllApps(it) }.also { grid = it as GlyphView }.apply {
@@ -623,6 +640,15 @@ class Capsule(
                 Slot.Status -> StatusView(context, context.dp(iconDp)).also { v ->
                     status = v
                     v.layoutParams = LayoutParams(context.dp(iconDp), context.dp(iconDp) + context.dp(6))
+                }
+                Slot.Spia -> SpiaView(context, context.dp(iconDp), vertical).also { v ->
+                    spia = v
+                    v.setLamps(spiaLamps, spiaCompact)
+                    v.isClickable = true
+                    pressable(v)
+                    // Tap or hold: either way the lamps open into their lines, each one to act on
+                    v.setOnClickListener { it.tick(); ripple(it); actions.onSpia(it) }
+                    v.setOnLongClickListener { it.thud(); actions.onSpia(it); true }
                 }
                 is Slot.App -> appIcon(slot)
                 is Slot.AppPair -> pairIcon(slot)

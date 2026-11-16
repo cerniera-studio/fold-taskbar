@@ -5,6 +5,8 @@
     <queries>
         <!-- Icon packs, so the bar can use the icons on your home screen -->
         <package android:name="ginlemon.iconpackstudio" />
+        <!-- Riserva (16 Nov 2026): the bar reads the battery for it, only when it is installed -->
+        <package android:name="com.cerniera.riserva" />
         <intent><action android:name="org.adw.launcher.THEMES" /></intent>
         <intent><action android:name="com.novalauncher.THEME" /></intent>
         <intent><action android:name="com.gau.go.launcherex.theme" /></intent>
@@ -83,11 +85,12 @@
                 android:resource="@xml/taskbar_service" />
         </service>
         <!-- Now playing (3 Nov 2026): Android only shows which music is playing to an app it
-             trusts with notifications. This service holds that permission and reads nothing else -->
+             trusts with notifications. Spia (16 Nov 2026) reads the notifications showing, in
+             memory only, to light its lamps. Nothing is stored or sent -->
         <service
             android:name=".MediaListener"
             android:exported="true"
-            android:label="Fold Taskbar now playing"
+            android:label="Fold Taskbar: now playing and Spia"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

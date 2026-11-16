@@ -32,9 +32,26 @@ import kotlin.math.sin
 //    the time goes with it. Only then does the bar carry the time and the battery.
 // Samsung's own status bar cannot be moved or hidden by an app, so it is never duplicated.
 
-/** Holds Android's permission to see which music is playing. It does nothing else. */
+/**
+ * Holds Android's notification access: for now playing (which music is playing) and, since
+ * 16 Nov 2026, for Spia's lamps, which are worked out in memory from the notifications showing.
+ * Nothing is stored or sent anywhere.
+ */
 class MediaListener : NotificationListenerService() {
+    override fun onListenerConnected() { Spia.listener = this; relight() }
+    override fun onListenerDisconnected() { if (Spia.listener === this) Spia.listener = null; Spia.recompute(this, null) }
+    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) = relight()
+    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) = relight()
+    override fun onDestroy() { if (Spia.listener === this) Spia.listener = null; super.onDestroy() }
+
+    /** Works the lamps out again; also called when Spia's settings change. */
+    fun relight() = Spia.recompute(this, runCatching { activeNotifications }.getOrNull())
+
     companion object {
+        /** Asks Android to reconnect the listener if One UI's battery care has let it go. */
+        fun rebind(c: Context) {
+            if (granted(c) && Spia.listener == null) runCatching { NotificationListenerService.requestRebind(component(c)) }
+        }
         fun component(c: Context) = ComponentName(c, MediaListener::class.java)
         fun granted(c: Context): Boolean =
             android.provider.Settings.Secure.getString(c.contentResolver, "enabled_notification_listeners")

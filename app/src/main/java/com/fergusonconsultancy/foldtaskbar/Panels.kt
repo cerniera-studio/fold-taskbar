@@ -36,9 +36,9 @@ class ActionMenu(
     context: Context,
     finish: Finish,
     title: String,
-    rows: List<Pair<String, () -> Unit>>,
+    rows: List<Pair<CharSequence, () -> Unit>>,
     choice: MenuChoice? = null,
-    after: List<Pair<String, () -> Unit>> = emptyList(),
+    after: List<Pair<CharSequence, () -> Unit>> = emptyList(),
 ) : LinearLayout(context) {
     init {
         orientation = VERTICAL
@@ -55,8 +55,12 @@ class ActionMenu(
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
-        fun row(label: String, marked: Boolean = false, action: () -> Unit) = addView(TextView(context).apply {
+        fun row(label: CharSequence, marked: Boolean = false, action: () -> Unit) = addView(TextView(context).apply {
             text = label
+            // Spia's lines can be long: two lines at most, so the menu stays a menu
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            maxWidth = context.dp(340)
             textSize = 16f
             setTextColor(if (marked) finish.indicator else finish.ink)
             minHeight = context.dp(44)

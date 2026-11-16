@@ -271,6 +271,22 @@ object Prefs {
     fun fullScreenStatus(c: Context) = of(c).getBoolean("full_screen_status", true)
     fun setFullScreenStatus(c: Context, v: Boolean) = of(c).edit().putBoolean("full_screen_status", v).apply()
 
+    /** Spia (16 Nov 2026): tell-tale lamps in the bar for the people and kinds of thing you choose. */
+    fun spia(c: Context) = of(c).getBoolean("spia", true)
+    fun setSpia(c: Context, v: Boolean) = of(c).edit().putBoolean("spia", v).apply()
+    fun spiaPeople(c: Context): List<String> = of(c).getString("spia_people", "").orEmpty()
+        .split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    fun setSpiaPeople(c: Context, v: List<String>) = of(c).edit().putString("spia_people", v.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("\n")).apply()
+    fun spiaApps(c: Context, kind: Lamp): Set<String> = of(c).getStringSet("spia_apps_${kind.name}", null)
+        ?: if (kind == Lamp.WORK) Spia.WORK_DEFAULTS else if (kind == Lamp.ARRIVING) Spia.ARRIVING_DEFAULTS else emptySet()
+    fun setSpiaApps(c: Context, kind: Lamp, v: Set<String>) = of(c).edit().putStringSet("spia_apps_${kind.name}", HashSet(v)).apply()
+    fun spiaFamily(c: Context) = of(c).getBoolean("spia_family", true)
+    fun setSpiaFamily(c: Context, v: Boolean) = of(c).edit().putBoolean("spia_family", v).apply()
+
+    /** Riserva (16 Nov 2026): the bar measures the battery per screen for the Riserva app, when it is installed. */
+    fun riservaMeter(c: Context) = of(c).getBoolean("riserva_meter", true)
+    fun setRiservaMeter(c: Context, v: Boolean) = of(c).edit().putBoolean("riserva_meter", v).apply()
+
     fun batteryStyle(c: Context) = runCatching { BatteryStyle.valueOf(of(c).getString("battery_style", null)!!) }.getOrDefault(BatteryStyle.FANALE)
     fun setBatteryStyle(c: Context, v: BatteryStyle) = of(c).edit().putString("battery_style", v.name).apply()
 
