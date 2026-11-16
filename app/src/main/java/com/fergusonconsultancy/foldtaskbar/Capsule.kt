@@ -643,6 +643,8 @@ class Capsule(
                 }
                 Slot.Spia -> SpiaView(context, context.dp(iconDp), vertical).also { v ->
                     spia = v
+                    // Sized by its own onMeasure; it still needs LinearLayout params for the gap below
+                    v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
                     v.setLamps(spiaLamps, spiaCompact)
                     v.isClickable = true
                     pressable(v)
@@ -653,7 +655,12 @@ class Capsule(
                 is Slot.App -> appIcon(slot)
                 is Slot.AppPair -> pairIcon(slot)
             }
-            if (i > 0) (v.layoutParams as LayoutParams).apply { if (vertical) topMargin = gap else marginStart = gap }
+            // Every slot must carry LinearLayout params; never trust a view to have set its own
+            val lp = (v.layoutParams as? LayoutParams)
+                ?: v.layoutParams?.let { LayoutParams(it) }
+                ?: LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+            if (i > 0) { if (vertical) lp.topMargin = gap else lp.marginStart = gap }
+            v.layoutParams = lp
             addView(v)
         }
         post { paint(fills, inks, edges, glows) }
