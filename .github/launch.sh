@@ -41,7 +41,7 @@ leaf() {
   sleep 1.2; shot "$1-leaf-rest"
   sleep 2.2; shot "$1-leaf-waiting"
   sleep 4.5; shot "$1-leaf-gone"
-  adb logcat -d -s Dittico:I | tail -5
+  adb logcat -d -s Dittico:I | tail -5; adb logcat -d | grep -A25 -E "FATAL EXCEPTION|Crash|Kit" | grep -iE "dittico|foldtaskbar|exception|at com.|Caused" | head -30
   adb shell dumpsys activity activities | grep -m2 -E "mResumedActivity|topResumedActivity"
 }
 size 1503x1568 280; leaf 8-main-portrait
