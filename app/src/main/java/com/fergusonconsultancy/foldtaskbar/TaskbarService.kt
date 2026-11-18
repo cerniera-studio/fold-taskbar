@@ -586,7 +586,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         main.removeCallbacks(hideNow)
         barOn = false
         arriving = true
-        dismissGhost()
+        dismissGhost(quick = true)
         hosts.forEach { Tuning.cancel(it); it.animate().cancel(); it.tag = null; it.visibility = View.GONE; it.alpha = 1f; it.scaleX = 1f; it.scaleY = 1f }
         closeMenu()
         if (::drawer.isInitialized) drawer.close(animated = false)
