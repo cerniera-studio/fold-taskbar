@@ -976,7 +976,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     // The unfold is when you decide to work properly. If the app on screen is one half of a
     // saved pair, its partner waits as a ghost on the empty half: tap and the screen splits
     // (through SplitActivity, the route that works), ignore it and it sinks back after
-    // RECEDE_MS. Concentrato: a fast unfold means you want this one app big, so nothing is offered.
+    // DITTICO_WAIT_MS. Concentrato: a fast unfold means you want this one app big, so nothing is offered.
 
     private var openRate = 0f
     private var openAt = 0L
@@ -1068,7 +1068,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         card.animate().alpha(0.9f).translationX(0f).translationY(0f)
             .setDuration(Curves.OPEN_MS).setInterpolator(Curves.OPEN).start()
         main.removeCallbacks(ghostRecede)
-        main.postDelayed(ghostRecede, Kit.RECEDE_MS)
+        main.postDelayed(ghostRecede, DITTICO_WAIT_MS)
         EventLog.add(this, "Dittico: offered ${theirs.label} beside ${mine.label}")
     }
 
@@ -2925,6 +2925,9 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         const val FAST_OPEN_DEG_S = 320f
         /** Dittico: how long after the entrance to read what is on screen. */
         const val DITTICO_AFTER_MS = 450L
+        /** Dittico: how long the partner waits. Longer than the Kit's 3.2 s recede, which Mechack
+         *  found too brief on the Fold (18 Nov): the eye is still settling on the opened screen. */
+        const val DITTICO_WAIT_MS = 6000L
         /** Show on unfold, full bar: how long the bar stays once its entrance is over. */
         const val UNFOLD_HOLD_MS = 3000L
         /** How long the status bar must stay hidden before the bar carries the time. */
