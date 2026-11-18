@@ -1047,6 +1047,13 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         EventLog.add(this, "Dittico: offered ${theirs.label} beside ${mine.label}")
     }
 
+    /** Tests only: the leaf as if Settings were in front and paired with Fold Taskbar. */
+    fun previewDittico() = main.post {
+        val mine = apps.entry("com.android.settings") ?: return@post
+        val theirs = apps.entry(packageName) ?: return@post
+        showGhost(mine, theirs)
+    }
+
     private fun dismissGhost(quick: Boolean = false) {
         main.removeCallbacks(ghostRecede)
         val leaf = ghost as? DitticoGhost ?: run { remove(ghost); ghost = null; return }

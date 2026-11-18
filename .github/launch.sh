@@ -31,6 +31,19 @@ for s in "5-main-portrait-bar 1503x1568 280" "6-main-landscape-bar 1568x1503 280
   adb shell input keyevent KEYCODE_HOME; sleep 5; shot "$1-home"
   adb shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 5; shot "$1-over-app"
 done
+# Dittico's leaf over Settings, upright then turned: being born, at rest, part-way through the wait
+leaf() {
+  adb shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 4
+  adb shell am start -n $PKG/.MainActivity --es open dittico >/dev/null
+  sleep 0.45; shot "$1-leaf-born"
+  sleep 1.2; shot "$1-leaf-rest"
+  sleep 2.2; shot "$1-leaf-waiting"
+  sleep 4.5; shot "$1-leaf-gone"
+}
+size 1503x1568 280; leaf 8-main-portrait
+adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 3
+leaf 9-main-turned
+adb shell settings put system user_rotation 0; sleep 2
 size 823x1920 320; adb shell input keyevent KEYCODE_HOME; sleep 4; shot "7-cover-bar-hidden"
 adb shell wm size reset; adb shell wm density reset
 adb logcat -d > logcat.txt
