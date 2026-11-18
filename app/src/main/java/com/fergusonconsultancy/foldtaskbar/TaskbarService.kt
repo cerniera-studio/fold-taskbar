@@ -981,7 +981,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     private var openRate = 0f
     private var openAt = 0L
     private var ghost: View? = null
-    private val ghostRecede = Runnable { dismissGhost() }
+    private val ghostRecede = Runnable { dismissGhost(quick = true) }
 
     private fun ditticoOnUnfold() {
         if (!Prefs.dittico(this)) return
@@ -1018,71 +1018,41 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     private fun showGhost(mine: AppEntry, theirs: AppEntry) {
-        dismissGhost()
-        val finish = Prefs.finish(this)
-        val card = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = surface(this@TaskbarService, finish, 26f)
-            setPadding(dp(16), dp(14), dp(22), dp(14))
-            elevation = dp(6).toFloat()
-            addView(android.widget.ImageView(this@TaskbarService).apply {
-                setImageDrawable(apps.icon(theirs.pkg))
-            }, android.widget.LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(14) })
-            addView(android.widget.LinearLayout(this@TaskbarService).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
-                addView(android.widget.TextView(this@TaskbarService).apply {
-                    text = theirs.label; textSize = 15f; setTextColor(finish.ink)
-                    typeface = Kit.sans(this@TaskbarService, 500)
-                })
-                addView(android.widget.TextView(this@TaskbarService).apply {
-                    text = "beside ${mine.label}"; textSize = 12.5f; setTextColor(finish.ink); alpha = 0.62f
-                    typeface = Kit.sans(this@TaskbarService, 400)
-                })
-            })
-            contentDescription = "Open ${theirs.label} beside ${mine.label}"
-            alpha = 0f
-        }
-        val host = shadowHost(card)
-        host.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        dismissGhost(quick = true)
         val s = screen()
-        // The empty half: right of the crease held upright, below it turned
+        // Upright, the crease runs down the middle and the leaf grows to its right; turned, it
+        // runs across and the leaf drops below it
         val r = getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY).rotation
         val upright = r == android.view.Surface.ROTATION_0 || r == android.view.Surface.ROTATION_180
-        val cx = if (upright) s.left + s.width() * 3 / 4 else s.centerX()
-        val cy = if (upright) s.centerY() else s.top + s.height() * 3 / 4
-        val x = (cx - host.measuredWidth / 2).coerceIn(s.left, maxOf(s.left, s.right - host.measuredWidth))
-        val y = (cy - host.measuredHeight / 2).coerceIn(s.top, maxOf(s.top, s.bottom - host.measuredHeight))
-        // It drifts in from the crease and sinks back towards it
-        val drift = dp(14).toFloat()
-        card.translationX = if (upright) -drift else 0f
-        card.translationY = if (upright) 0f else -drift
-        card.setOnClickListener {
-            main.removeCallbacks(ghostRecede)
-            remove(host); ghost = null
-            EventLog.add(this, "Dittico: ${theirs.label} beside ${mine.label}")
-            startSplit(mine.component, theirs.component)
-        }
-        add(host, params(Gravity.TOP or Gravity.START, x, y))
-        ghost = host
-        card.animate().alpha(0.9f).translationX(0f).translationY(0f)
-            .setDuration(Curves.OPEN_MS).setInterpolator(Curves.OPEN).start()
+        lateinit var leaf: DitticoGhost
+        leaf = DitticoGhost(this, Prefs.finish(this), apps.icon(theirs.pkg), theirs.label, "Beside ${mine.label}",
+            upright, DITTICO_WAIT_MS,
+            onAccept = {
+                main.removeCallbacks(ghostRecede)
+                EventLog.add(this, "Dittico: ${theirs.label} beside ${mine.label}")
+                startSplit(mine.component, theirs.component)
+                // The leaf finishes its flourish, then goes
+                main.postDelayed({ if (ghost === leaf) { remove(leaf); ghost = null } }, 520)
+            },
+            onExpire = { dismissGhost() })
+        leaf.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val x = if (upright) s.centerX() else s.centerX() - leaf.measuredWidth / 2
+        val y = if (upright) s.centerY() - leaf.measuredHeight / 2 else s.centerY()
+        add(leaf, params(Gravity.TOP or Gravity.START, x, y))
+        ghost = leaf
+        leaf.born()
+        // A safety net: the leaf counts its own wait (and pauses it under a finger)
         main.removeCallbacks(ghostRecede)
-        main.postDelayed(ghostRecede, DITTICO_WAIT_MS)
+        main.postDelayed(ghostRecede, DITTICO_WAIT_MS + 30_000)
         EventLog.add(this, "Dittico: offered ${theirs.label} beside ${mine.label}")
     }
 
-    private fun dismissGhost() {
+    private fun dismissGhost(quick: Boolean = false) {
         main.removeCallbacks(ghostRecede)
-        val h = ghost ?: return
+        val leaf = ghost as? DitticoGhost ?: run { remove(ghost); ghost = null; return }
         ghost = null
-        val card = (h as? android.view.ViewGroup)?.getChildAt(0)
-        if (card == null) { remove(h); return }
-        val r = getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY).rotation
-        val upright = r == android.view.Surface.ROTATION_0 || r == android.view.Surface.ROTATION_180
-        val drift = dp(14).toFloat()
-        card.animate().alpha(0f).translationX(if (upright) -drift else 0f).translationY(if (upright) 0f else -drift)
-            .setDuration(320).withEndAction { remove(h) }.start()
+        if (quick || !leaf.isAttachedToWindow) { remove(leaf); return }
+        leaf.recede { remove(leaf) }
     }
 
     private fun peek() {
