@@ -180,6 +180,13 @@ class MainActivity : Activity() {
         }, styles.indexOf(Prefs.batteryStyle(this))) { Prefs.setBatteryStyle(this, styles[it]) })
         screen.add(batteryOptions, px(18))
 
+        // ---- Dittico (18 Nov 2026): a slow unfold offers the other half of a saved pair
+        screen.section("Dittico")
+        screen.add(Card(this).apply {
+            row(Row(this@MainActivity, "Dittico", "Unfold slowly while in an app you have paired, and its partner waits on the empty half for a moment. Tap it to split the screen; leave it and it sinks back. A fast unfold offers nothing. To save a pair, split the screen between two apps and hold the grid button",
+                Toggle(this@MainActivity, Prefs.dittico(this@MainActivity)) { Prefs.setDittico(this@MainActivity, it) }))
+        })
+
         // ---- Spia (16 Nov 2026): a car's tell-tale lamps in the bar's trim
         screen.section("Spia")
         peopleRow = Row(this, "People", "", endValue("Edit  ›", Kit.CHAMPAGNE)) { editPeople() }
@@ -578,6 +585,7 @@ class MainActivity : Activity() {
             "Avorio, Carbonio, Ceramica" to "Three more adaptive finishes. Avorio is the Giulietta's ivory leather, always the light one, deepening to warm stone over bright screens, with rosso marking the app in use. Carbonio is Bauhaus restraint, always the dark one, lifting to charcoal with a brighter edge over dark screens so its outline holds. Ceramica is Gaudí's glazed tile: each stretch of the bar fires the hue beneath it as glaze, pale over dark screens and deep over bright.",
             "One finish, everywhere" to "The app grid wears whatever the bar is wearing, adapted the same way to the screen it opens over. Over a dark screen smoked glass turns to light glass with dark ink in the grid exactly as it does on the bar.",
             "Spia" to "The tell-tale lamps of an Alfa binnacle: no labels, colour alone. Rosso for the people you name, amber for work, green for something arriving, champagne for the Cerniera apps. They stand in columns of up to three and grow into the bar, so the icons beside them ease apart instead of jumping. Each stays lit until its notification is dealt with, here, in the shade or in its app. While an app has the whole screen they fold down to one pip in the colour of the most urgent lamp.",
+            "Dittico" to "A diptych: two panels joined by a hinge. The unfold is when you decide to work properly, so the app you are in is offered its usual partner then, from where you already are, with no trip to an Edge panel. The partner arrives as a ghost from the crease and sinks back into it if you leave it. A fast unfold is Concentrato: you want this one app big, so nothing is offered.",
             "Profile" to "Round is the capsule, its ends fully rounded. Slim is a lower, flatter slab with tighter corners: Bauhaus in its restraint, giving the screen back a few points.",
             "Live" to "Two ideas from the iPhone Duo's status column, taken only where a need puts them. Now playing gives the bar a new ability: the music that is playing, at the bar's outer end. The time and battery appear only when an app has hidden the status bar, because Samsung's own status bar cannot be moved, and a second clock beside it would be ornament no need put there. The waveform moves with the playing state, not the sound: the bar cannot hear the audio.",
             "Show on unfold" to "A bar out of sight is only found by remembering where you left it, and after a night folded nobody does. So with Hide or Trim, every unfold shows where the bar lives, then lets it rest again. There is no timer: it happens every time, so you always know what to expect. Leaving, the bar sinks into the edge it rests against, so every hide is a reminder of its place too.",
@@ -598,6 +606,7 @@ class MainActivity : Activity() {
             "Switching" to "Tap an app to switch to it. Hold an app for its menu: pin, pair and more.",
             "Split screen and pop-ups" to "Press an app and slide it out of the bar for a split screen, or to the centre for a pop-up. In the grid, hold, then slide.",
             "Moving the bar" to "Hold the grid button or the grip and slide. Let go near an edge and it docks, upright on the sides. Near the crease it centres on it. Throw it mostly off the screen to collapse it to a tab.",
+            "Dittico" to "Split the screen between two apps, hold the grid button and save them as a pair. Then unfold slowly while either is in front, and tap its partner on the empty half to split the screen.",
             "Spia" to "Tap or hold the lamps for their lines, the person or app first. Tap a line to open it as its notification would; Clear puts a lamp out by clearing its notifications.",
             "Icon packs" to "Icon Pack Studio packs need exporting with the free Icon Pack Studio Exporter before any app other than Smart Launcher can read them.",
         )

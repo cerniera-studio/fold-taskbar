@@ -536,6 +536,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         val now = SystemClock.uptimeMillis()
         val rate = if (!hingeAngle.isNaN() && now > hingeAt) (angle - hingeAngle) * 1000f / (now - hingeAt) else 0f
         hingeAngle = angle; hingeAt = now
+        // Dittico: how fast the phone was last opened (the sensor is coarse, so this comes in steps)
+        if (rate > 0f) { openRate = if (now - openAt < 1500) maxOf(openRate, rate) else rate; openAt = now }
         val shutting = angle < SHUT_DEG || (angle < CLOSING_BELOW_DEG && rate < -CLOSING_RATE_DEG_S)
         main.removeCallbacks(hingeStill)
         if (shutting && !folding) {
@@ -584,6 +586,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         main.removeCallbacks(hideNow)
         barOn = false
         arriving = true
+        dismissGhost()
         hosts.forEach { Tuning.cancel(it); it.animate().cancel(); it.tag = null; it.visibility = View.GONE; it.alpha = 1f; it.scaleX = 1f; it.scaleY = 1f }
         closeMenu()
         if (::drawer.isInitialized) drawer.close(animated = false)
@@ -811,7 +814,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         // the next fold and unfold
         barOn = on
         entering = on && arriving
-        if (entering) { arriving = false; showOnUnfold() }
+        if (entering) { arriving = false; showOnUnfold(); ditticoOnUnfold() }
         hosts.forEachIndexed { i, host ->
             val want = hostWanted(i)
             if (want && host.visibility != View.VISIBLE) place(i)
@@ -967,6 +970,119 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             main.postDelayed({ peek() }, 60)
             EventLog.add(this, "Shown on unfold: peek")
         }
+    }
+
+    // ---- Dittico (18 Nov 2026) ------------------------------------------------------------
+    // The unfold is when you decide to work properly. If the app on screen is one half of a
+    // saved pair, its partner waits as a ghost on the empty half: tap and the screen splits
+    // (through SplitActivity, the route that works), ignore it and it sinks back after
+    // RECEDE_MS. Concentrato: a fast unfold means you want this one app big, so nothing is offered.
+
+    private var openRate = 0f
+    private var openAt = 0L
+    private var ghost: View? = null
+    private val ghostRecede = Runnable { dismissGhost() }
+
+    private fun ditticoOnUnfold() {
+        if (!Prefs.dittico(this)) return
+        val now = SystemClock.uptimeMillis()
+        if (now - openAt < 4000 && openRate > FAST_OPEN_DEG_S) {
+            EventLog.add(this, "Dittico: fast unfold (${openRate.toInt()}°/s), nothing offered")
+            return
+        }
+        // Let the windows settle after the fold, then read what is on screen afresh
+        main.postDelayed({
+            bg.post {
+                scanWindows()
+                main.post { offerPartner() }
+            }
+        }, DITTICO_AFTER_MS)
+    }
+
+    private fun offerPartner() {
+        if (!barOn || !isMainScreen() || locked()) return
+        val front = onScreen.filter { it !in noRecents }
+        val current = front.firstOrNull()
+        if (current == null) { EventLog.add(this, "Dittico: no app on screen (home), nothing offered"); return }
+        if (front.size > 1) { EventLog.add(this, "Dittico: already split, nothing offered"); return }
+        val partner = Prefs.pairs(this).firstNotNullOfOrNull { (l, r) ->
+            when (current) { l -> r; r -> l; else -> null }
+        }?.takeIf { it != current }
+        val mine = apps.entry(current)
+        val theirs = partner?.let { apps.entry(it) }
+        if (mine == null || theirs == null) {
+            EventLog.add(this, "Dittico: ${mine?.label ?: current} has no saved partner")
+            return
+        }
+        showGhost(mine, theirs)
+    }
+
+    private fun showGhost(mine: AppEntry, theirs: AppEntry) {
+        dismissGhost()
+        val finish = Prefs.finish(this)
+        val card = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = surface(this@TaskbarService, finish, 26f)
+            setPadding(dp(16), dp(14), dp(22), dp(14))
+            elevation = dp(6).toFloat()
+            addView(android.widget.ImageView(this@TaskbarService).apply {
+                setImageDrawable(apps.icon(theirs.pkg))
+            }, android.widget.LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(14) })
+            addView(android.widget.LinearLayout(this@TaskbarService).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                addView(android.widget.TextView(this@TaskbarService).apply {
+                    text = theirs.label; textSize = 15f; setTextColor(finish.ink)
+                    typeface = Kit.sans(this@TaskbarService, 500)
+                })
+                addView(android.widget.TextView(this@TaskbarService).apply {
+                    text = "beside ${mine.label}"; textSize = 12.5f; setTextColor(finish.ink); alpha = 0.62f
+                    typeface = Kit.sans(this@TaskbarService, 400)
+                })
+            })
+            contentDescription = "Open ${theirs.label} beside ${mine.label}"
+            alpha = 0f
+        }
+        val host = shadowHost(card)
+        host.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val s = screen()
+        // The empty half: right of the crease held upright, below it turned
+        val r = getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY).rotation
+        val upright = r == android.view.Surface.ROTATION_0 || r == android.view.Surface.ROTATION_180
+        val cx = if (upright) s.left + s.width() * 3 / 4 else s.centerX()
+        val cy = if (upright) s.centerY() else s.top + s.height() * 3 / 4
+        val x = (cx - host.measuredWidth / 2).coerceIn(s.left, maxOf(s.left, s.right - host.measuredWidth))
+        val y = (cy - host.measuredHeight / 2).coerceIn(s.top, maxOf(s.top, s.bottom - host.measuredHeight))
+        // It drifts in from the crease and sinks back towards it
+        val drift = dp(14).toFloat()
+        card.translationX = if (upright) -drift else 0f
+        card.translationY = if (upright) 0f else -drift
+        card.setOnClickListener {
+            main.removeCallbacks(ghostRecede)
+            remove(host); ghost = null
+            EventLog.add(this, "Dittico: ${theirs.label} beside ${mine.label}")
+            startSplit(mine.component, theirs.component)
+        }
+        add(host, params(Gravity.TOP or Gravity.START, x, y))
+        ghost = host
+        card.animate().alpha(0.9f).translationX(0f).translationY(0f)
+            .setDuration(Curves.OPEN_MS).setInterpolator(Curves.OPEN).start()
+        main.removeCallbacks(ghostRecede)
+        main.postDelayed(ghostRecede, Kit.RECEDE_MS)
+        EventLog.add(this, "Dittico: offered ${theirs.label} beside ${mine.label}")
+    }
+
+    private fun dismissGhost() {
+        main.removeCallbacks(ghostRecede)
+        val h = ghost ?: return
+        ghost = null
+        val card = (h as? android.view.ViewGroup)?.getChildAt(0)
+        if (card == null) { remove(h); return }
+        val r = getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY).rotation
+        val upright = r == android.view.Surface.ROTATION_0 || r == android.view.Surface.ROTATION_180
+        val drift = dp(14).toFloat()
+        card.animate().alpha(0f).translationX(if (upright) -drift else 0f).translationY(if (upright) 0f else -drift)
+            .setDuration(320).withEndAction { remove(h) }.start()
     }
 
     private fun peek() {
@@ -2805,6 +2921,10 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         const val RECEDE_SETTLE_MS = 1500L
         /** The bar's entrance after an unfold: long and gentle. */
         const val ENTRANCE_MS = 560L
+        /** Dittico: an unfold faster than this (the Kit's fast fold) offers nothing. */
+        const val FAST_OPEN_DEG_S = 320f
+        /** Dittico: how long after the entrance to read what is on screen. */
+        const val DITTICO_AFTER_MS = 450L
         /** Show on unfold, full bar: how long the bar stays once its entrance is over. */
         const val UNFOLD_HOLD_MS = 3000L
         /** How long the status bar must stay hidden before the bar carries the time. */

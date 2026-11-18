@@ -271,6 +271,10 @@ object Prefs {
     fun fullScreenStatus(c: Context) = of(c).getBoolean("full_screen_status", true)
     fun setFullScreenStatus(c: Context, v: Boolean) = of(c).edit().putBoolean("full_screen_status", v).apply()
 
+    /** Dittico (18 Nov 2026): a slow unfold offers the other half of a saved pair beside the app on screen. */
+    fun dittico(c: Context) = of(c).getBoolean("dittico", true)
+    fun setDittico(c: Context, v: Boolean) = of(c).edit().putBoolean("dittico", v).apply()
+
     /** Spia (16 Nov 2026): tell-tale lamps in the bar for the people and kinds of thing you choose. */
     fun spia(c: Context) = of(c).getBoolean("spia", true)
     fun setSpia(c: Context, v: Boolean) = of(c).edit().putBoolean("spia", v).apply()
