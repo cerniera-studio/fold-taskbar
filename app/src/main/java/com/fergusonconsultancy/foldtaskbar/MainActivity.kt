@@ -70,10 +70,6 @@ class MainActivity : Activity() {
         return true
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        previewDittico(intent)
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -320,7 +316,8 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        openFrom(intent)
+        // Dittico's preview (tests) or Fluido's settings (Lume's menu)
+        if (!previewDittico(intent)) openFrom(intent)
     }
 
     /** "open=fluido" (from Lume's menu, or a test): scrolls to Fluido with what Senso sees unfolded. */
