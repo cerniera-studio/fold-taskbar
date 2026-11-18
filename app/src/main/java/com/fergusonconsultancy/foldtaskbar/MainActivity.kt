@@ -55,15 +55,25 @@ class MainActivity : Activity() {
     private lateinit var logText: TextView
     private lateinit var versionText: TextView
 
+    /** Tests: show Dittico's leaf over whatever was in front (the emulator cannot fold). */
+    private fun previewDittico(i: Intent?): Boolean {
+        if (i?.getStringExtra("open") != "dittico") return false
+        TaskbarService.instance?.previewDittico()
+        finish(); overridePendingTransition(0, 0)
+        return true
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        previewDittico(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Crash.install(this, "Fold Taskbar")
         if (Crash.show(this, "Fold Taskbar")) return
         // Tests: show Dittico's leaf over whatever was in front (the emulator cannot fold)
-        if (intent?.getStringExtra("open") == "dittico") {
-            TaskbarService.instance?.previewDittico()
-            finish(); overridePendingTransition(0, 0); return
-        }
+        if (previewDittico(intent)) return
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         screen = Screen(this, "Fold Taskbar", "Galaxy Z Fold 8 Ultra")
