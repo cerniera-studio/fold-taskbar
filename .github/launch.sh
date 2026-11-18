@@ -44,7 +44,7 @@ leaf() {
   adb logcat -d -s Dittico:I | tail -5; adb logcat -d | grep -A25 -E "FATAL EXCEPTION|Crash|Kit" | grep -iE "dittico|foldtaskbar|exception|at com.|Caused" | head -30
   adb shell dumpsys activity activities | grep -m2 -E "mResumedActivity|topResumedActivity"
 }
-size 1503x1568 280; leaf 8-main-portrait
+size 1503x1568 280; sleep 6; leaf 8-main-portrait
 adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 3
 leaf 9-main-turned
 adb shell settings put system user_rotation 0; sleep 2

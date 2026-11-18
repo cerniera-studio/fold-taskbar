@@ -1056,6 +1056,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     private fun dismissGhost(quick: Boolean = false) {
+        if (ghost != null) android.util.Log.i("Dittico", "leaf dismissed (quick=$quick) from ${Throwable().stackTrace.getOrNull(1)}")
         main.removeCallbacks(ghostRecede)
         val leaf = ghost as? DitticoGhost ?: run { remove(ghost); ghost = null; return }
         ghost = null
