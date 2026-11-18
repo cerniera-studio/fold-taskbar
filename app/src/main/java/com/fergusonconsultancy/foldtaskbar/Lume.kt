@@ -132,7 +132,8 @@ class LumeView(context: Context, private val sizePx: Int, private val vertical: 
         val r = point + (big - point) * swell
         if (lit > 0f && swell < 0.5f) {
             fill.color = withAlpha(champagne, 0.22f * lit * (1f - swell * 2f))
-            canvas.drawCircle(cx, cy, point * 2.6f, fill)
+            // The halo stays inside Lume's own narrow box, so it is never cut square
+            canvas.drawCircle(cx, cy, minOf(point * 2.6f, minOf(width, height) / 2f - 1f), fill)
         }
         fill.color = withAlpha(champagne, (0.4f + 0.55f * lit) * (1f - swell))
         canvas.drawCircle(cx, cy, r, fill)

@@ -51,7 +51,8 @@ inject "--es dismiss listening"; sleep 1;                                       
 inject "--es undismiss all --ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80"; sleep 4
 size 1568x1503 280
 adb shell input keyevent KEYCODE_HOME; sleep 4
-inject "--ez clear true --es at 14:00 --es rain_in 30 --es rain_chance 90"; sleep 1;                     shot "8g-lume-rain-landscape"
+inject "--ez clear true --es at 14:00"; sleep 2
+inject "--es event_in 15 --es event_title Dentist --es event_where 'Park Square'"; sleep 1;            shot "8g-lume-leaving-landscape"
 # What Senso sees, in the settings
 size 1503x1568 280
 inject "--ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80 --es event_in 70 --es event_title Dentist --es event_where 'Park Square'"; sleep 2
