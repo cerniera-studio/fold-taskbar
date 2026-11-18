@@ -155,6 +155,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         pour = Pour(this, wm)
         nowPlaying = NowPlaying(this) {
             capsules.forEach { c -> c.setTrack(liveTrack()) }
+            feedPlaying()
             main.removeCallbacks(applyNow); main.post(applyNow)
         }
         liveCheck()
@@ -167,6 +168,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         hidePackages = setOf("com.android.systemui")
         homes = linkedSetOf<String>().apply { apps.homePackage()?.let(::add); addAll(homePackages()) }
         noRecents = homes + hidePackages
+        fluidoCheck()
         Prefs.of(this).registerOnSharedPreferenceChangeListener(this)
         getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, main)
         running = true
@@ -235,6 +237,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     override fun onDestroy() {
         if (::nowPlaying.isInitialized) nowPlaying.stop()
+        senso?.let { it.unwatch(sensoChanged); it.stop() }
+        senso = null
         Spia.unwatch(spiaChanged)
         if (::meter.isInitialized) meter.stop()
         running = false
@@ -293,6 +297,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun onSharedPreferenceChanged(p: SharedPreferences?, key: String?) {
         if (key == "presence") main.post { restIfTrim(); listenForScrolls() }
         if (key == "live_music") main.post { liveCheck() }
+        if (key == "fluido") main.post { fluidoCheck(); liveCheck() }
         if (key != null && key.startsWith("spia")) main.post { liveCheck(); Spia.listener?.relight() }
         if (key == "riserva_meter" && ::meter.isInitialized) main.post { meter.start() }
         if (key == Prefs.ICON_PACK) {
@@ -641,6 +646,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Main thread. Cheap when nothing has changed. */
     private fun apply() {
         if (!::wm.isInitialized) return
+        onScreen.firstOrNull()?.let { senso?.front(it) }
         statusPx = statusInset()
         recordRecents()
         reportOpenTime()
@@ -839,7 +845,8 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Starts following the music once Android allows it; called whenever that may have changed. */
     fun liveCheck() {
         if (!::nowPlaying.isInitialized) return
-        if (Prefs.liveMusic(this) && MediaListener.granted(this)) nowPlaying.start() else nowPlaying.stop()
+        // Lume's listening reads the music too, even with now playing off the bar
+        if ((Prefs.liveMusic(this) || Prefs.fluido(this)) && MediaListener.granted(this)) nowPlaying.start() else nowPlaying.stop()
         // One UI can let the listener go to save battery; the bar is always running, so it asks back
         if (Prefs.spia(this)) MediaListener.rebind(this)
     }
@@ -935,6 +942,176 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
             "Previous" to { closeMenu(); nowPlaying.previous() },
             "Open ${apps.entry(t.pkg)?.label ?: "player"}" to { closeMenu(); nowPlaying.open() },
         ), view)
+    }
+
+    // ---- Fluido (18 Nov 2026): Senso reads the moment, Lume offers it ---------------------------
+
+    /** The context engine, while Fluido is on. Public for the settings' debug view. */
+    var senso: Senso? = null; private set
+    /** Which hand is using the bar: -1 left, 1 right (the default: the outer end, beside Spia). */
+    private var lumeHand = 1
+    private var lumePendingHand: Int? = null
+    private var lumeKey: String? = null
+    private var touchingBar = false
+    private var draggingBar = false
+
+    private val sensoChanged: (Senso) -> Unit = { lumeChanged() }
+
+    /** Starts or stops Senso with the Fluido switch. Off, the bar behaves as it did before Fluido. */
+    fun fluidoCheck() {
+        if (Prefs.fluido(this)) {
+            if (senso == null) senso = Senso(this, "Fold Taskbar", Lume.KINDS, injectable = true).also {
+                it.homes(homes)
+                it.watch(sensoChanged)
+                it.start()
+                EventLog.add(this, "Fluido on: Senso listening for ${Lume.KINDS.joinToString { k -> k.label.lowercase() }}")
+            }
+            feedPlaying()
+        } else senso?.let {
+            it.unwatch(sensoChanged); it.stop(); senso = null
+            EventLog.add(this, "Fluido off: Lume removed from the bar")
+        }
+        lumeChanged()
+        main.removeCallbacks(applyNow); main.post(applyNow)
+    }
+
+    private fun feedPlaying() {
+        val t = if (::nowPlaying.isInitialized) nowPlaying.track else null
+        Lume.art = t?.art
+        Lume.paused = t?.playing == false
+        senso?.playing(t?.let { SensoPlaying(it.pkg, it.title, it.artist, it.playing, System.currentTimeMillis()) })
+    }
+
+    private val lumeRecede = Runnable {
+        if (!Lume.offering) return@Runnable
+        // A finger still on the bar keeps it; it recedes once the hand has left
+        if (touchingBar) { scheduleLumeRecede(); return@Runnable }
+        Lume.offering = false
+        Lume.changed()
+    }
+
+    private fun scheduleLumeRecede() { main.removeCallbacks(lumeRecede); main.postDelayed(lumeRecede, Kit.RECEDE_MS) }
+
+    /** Senso changed its mind (or Fluido was switched): Lume swells for a new moment, rests for none. */
+    private fun lumeChanged() {
+        val m = if (Prefs.fluido(this)) senso?.offered else null
+        val key = m?.let { it.kind.id + "|" + it.why }
+        val was = Lume.moment
+        Lume.moment = m
+        if (key == lumeKey) return
+        lumeKey = key
+        when {
+            m == null -> {
+                main.removeCallbacks(lumeRecede)
+                Lume.offering = false
+                if (was != null) EventLog.add(this, "Lume: at rest")
+            }
+            m.kind != was?.kind -> {
+                // A new moment: it swells and offers, then recedes to a lit point
+                Lume.offering = true
+                scheduleLumeRecede()
+                EventLog.add(this, "Lume: ${m.kind.label.lowercase()} (${m.percent}%) · ${m.why}")
+            }
+        }
+        Lume.changed()
+        applyPendingHand()
+    }
+
+    override fun onCapsuleTouch(down: Boolean, rawX: Float, rawY: Float) {
+        touchingBar = down
+        if (down) {
+            val hand = if (rawX < screen().exactCenterX()) -1 else 1
+            if (hand != lumeHand) lumePendingHand = hand
+        }
+        lumeQuiet()
+        if (!down) { applyPendingHand(); if (Lume.offering) scheduleLumeRecede() }
+    }
+
+    /**
+     * Concentrato: during a gesture on the bar (a slide, a drag, an app carried out), Lume steps
+     * back to a point. A touch on Lume itself is not a gesture: the capsule leaves those out.
+     */
+    private fun lumeQuiet(drag: Boolean? = null) {
+        drag?.let { draggingBar = it }
+        val q = draggingBar || touchingBar
+        if (q != Lume.quiet) { Lume.quiet = q; Lume.changed() }
+    }
+
+    /** Lume follows the hand, but never moves under a finger, nor while it is offering. */
+    private fun applyPendingHand() {
+        val h = lumePendingHand ?: return
+        if (touchingBar || draggingBar || Lume.offering) return
+        lumePendingHand = null
+        if (h == lumeHand) return
+        lumeHand = h
+        main.removeCallbacks(applyNow); main.post(applyNow)
+    }
+
+    override fun onLume(view: View) {
+        onBarTouched()
+        val m = Lume.moment ?: return
+        // A lit point first swells to show what it holds; the ring acts
+        if (!Lume.offering) { Lume.offering = true; Lume.changed(); scheduleLumeRecede(); return }
+        act(m)
+    }
+
+    override fun onLumeHeld(view: View) {
+        closePanels()
+        val m = Lume.moment ?: return
+        val sure = "${m.percent}% sure · " + m.reasons.joinToString(" · ")
+        showMenu(m.kind.label, listOf(
+            m.why as CharSequence to { closeMenu(); act(m) },
+            sure as CharSequence to { closeMenu() },
+        ), view, null, listOf(
+            "Not today" as CharSequence to { closeMenu(); dismissLume(m) },
+            "Fluido settings" as CharSequence to {
+                closeMenu()
+                startActivity(Intent(this, MainActivity::class.java).putExtra("open", "fluido").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            },
+        ))
+        EventLog.add(this, "Lume: asked why (${m.kind.label.lowercase()})")
+    }
+
+    override fun onLumeDismissed(view: View) { Lume.moment?.let { dismissLume(it) } }
+
+    private fun dismissLume(m: Moment) {
+        EventLog.add(this, "Lume: ${m.kind.label.lowercase()} put away for today")
+        senso?.dismiss(m.kind)
+    }
+
+    /** Does the one thing the moment offers, then recedes. */
+    private fun act(m: Moment) {
+        val done = when (m.kind) {
+            Kind.RAIN_COMING -> openCielo()
+            Kind.LEAVING_SOON -> openEvent()
+            Kind.LISTENING -> if (Lume.paused) { nowPlaying.toggle(); true } else nowPlaying.open()
+            else -> false
+        }
+        EventLog.add(this, "Lume: ${m.kind.label.lowercase()} tapped" + if (done) "" else ", but nothing could be opened")
+        main.removeCallbacks(lumeRecede)
+        Lume.offering = false
+        Lume.changed()
+    }
+
+    /** Cielo: the app sharing the rain, or failing that the installed app called Cielo. */
+    private fun openCielo(): Boolean {
+        val pkg = runCatching { packageManager.resolveContentProvider(Senso.RAIN.authority!!, 0)?.packageName }.getOrNull()
+            ?: apps.all().firstOrNull { it.label.equals("Cielo", ignoreCase = true) }?.pkg
+            ?: return false
+        return openPackage(pkg)
+    }
+
+    /** The calendar, open at the event's time. */
+    private fun openEvent(): Boolean {
+        val start = senso?.signals?.event?.start ?: return false
+        return runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://com.android.calendar/time/$start")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
+    }
+
+    private fun openPackage(pkg: String): Boolean {
+        val i = packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        return runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
     }
 
     // ---- Show on unfold (2 Nov 2026) ----------------------------------------------------
@@ -1236,6 +1413,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun onTouched() = onBarTouched()
 
     override fun onDragStart(host: BarHost) {
+        lumeQuiet(drag = true)
         closePanels()
         main.removeCallbacks(autoHideNow)
         val lp = host.layoutParams as WindowManager.LayoutParams
@@ -1255,6 +1433,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
      * off the screen, it collapses into a tab on that edge.
      */
     override fun onDragEnd(host: BarHost) {
+        lumeQuiet(drag = false)
         val i = hosts.indexOf(host)
         if (i < 0) return
         val shape = Prefs.shape(this)
@@ -2017,23 +2196,28 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         // Live sits at the bar's outer end, as the Duo's column sits at the screen's edge
         // Spia's lamps sit with them, at the end nearest the clock (16 Nov 2026)
         val live = listOfNotNull(Slot.Spia.takeIf { spiaLamps().isNotEmpty() }, Slot.Live.takeIf { liveTrack() != null }, Slot.Status.takeIf { wantStatus() })
+        // Lume (18 Nov 2026) sits in the trim at the end nearest the hand: beside the grid button
+        // for the left hand, at the outer end for the right
+        val lumeL = if (Prefs.fluido(this) && lumeHand < 0) listOf<Slot>(Slot.Lume) else emptyList()
+        val lumeR = if (Prefs.fluido(this) && lumeHand >= 0) listOf<Slot>(Slot.Lume) else emptyList()
         return when (shape) {
             Shape.PAIR -> listOf(
-                (listOf(Slot.AllApps) + pinned.map { Slot.App(it) } + pairs).take(maxSlots),
+                listOf(Slot.AllApps) + lumeL + (pinned.map { Slot.App(it) } + pairs).take((maxSlots - 1 - lumeL.size).coerceAtLeast(0)),
                 // The second capsule gets its own handle at its outer end, mirroring the grid
                 // button, so in split screen each half of the bar can sit over its own app
-                tray.take((maxSlots - 1 - live.size).coerceAtLeast(1)).map { Slot.App(it) } +
-                    (if (live.isNotEmpty()) listOf(Slot.Divider) + live else emptyList()) + Slot.Grip,
+                tray.take((maxSlots - 1 - live.size - lumeR.size).coerceAtLeast(1)).map { Slot.App(it) } +
+                    (if (live.isNotEmpty()) listOf(Slot.Divider) + live else emptyList()) + lumeR + Slot.Grip,
             )
             Shape.CAPSULE -> {
+                val lumes = lumeL.size + lumeR.size
                 val p = pinned.take((maxSlots - 1) / 2 + 1)
-                val r = tray.take((maxSlots - 1 - p.size - pairs.size - live.size).coerceAtLeast(1))
+                val r = tray.take((maxSlots - 1 - p.size - pairs.size - live.size - lumes).coerceAtLeast(1))
                 val pr = pairs.take((maxSlots - 1 - p.size).coerceAtLeast(0))
                 listOf(
-                    listOf(Slot.AllApps) + p.map { Slot.App(it) } + pr +
+                    listOf(Slot.AllApps) + lumeL + p.map { Slot.App(it) } + pr +
                         (if (p.isNotEmpty() && r.isNotEmpty()) listOf(Slot.Divider) else emptyList()) +
                         r.map { Slot.App(it) } +
-                        (if (live.isNotEmpty()) listOf(Slot.Divider) + live else emptyList())
+                        (if (live.isNotEmpty()) listOf(Slot.Divider) + live else emptyList()) + lumeR
                 )
             }
         }
@@ -2444,6 +2628,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         capsules.getOrNull(hosts.indexOf(host))?.isHandle(x, y) == true
 
     override fun onAppDragStart(host: BarHost, pkg: String, x: Float, y: Float) {
+        lumeQuiet(drag = true)
         dismissHint()
         focusOn(capsules.getOrNull(hosts.indexOf(host)), pkg)
         if (pkg.startsWith("pair:")) {
@@ -2535,6 +2720,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun isResting(host: BarHost) = capsules.getOrNull(hosts.indexOf(host))?.resting == true
 
     override fun onWake(host: BarHost, x: Float, y: Float) {
+        onCapsuleTouch(true, x, y)
         capsules.getOrNull(hosts.indexOf(host))?.setResting(false, x, y)
         scheduleRest()
     }
@@ -2545,6 +2731,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     override fun onScrubEnd(host: BarHost, x: Float, y: Float, slid: Boolean) {
+        onCapsuleTouch(false, x, y)
         val capsule = capsules.getOrNull(hosts.indexOf(host)) ?: return
         capsule.unmagnify()
         if (slid) {
@@ -2651,6 +2838,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     /** Left or right: split with the app on screen. Middle: a pop-up where you let go. */
     override fun onAppDragEnd(x: Float, y: Float, cancelled: Boolean) {
+        lumeQuiet(drag = false)
         if (!systemDragging) unfocus()
         if (systemDragging) {
             // Android carries it from here; its drop zones decide what opens where

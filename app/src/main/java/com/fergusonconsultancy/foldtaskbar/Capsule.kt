@@ -24,11 +24,15 @@ sealed interface Slot {
     object Status : Slot
     /** Spia (16 Nov 2026): the tell-tale lamps, while any is lit. */
     object Spia : Slot
+    /** Lume (18 Nov 2026): Fluido's light in the trim, at the end nearest the hand. */
+    object Lume : Slot
     data class App(val pkg: String) : Slot
     data class AppPair(val left: String, val right: String) : Slot { val key get() = "pair:$left|$right" }
 }
 
-interface CapsuleActions {
+interface CapsuleActions : LumeActions {
+    /** A finger landed on (true) or left (false) the capsule, at a point on screen: Lume follows the hand. */
+    fun onCapsuleTouch(down: Boolean, rawX: Float, rawY: Float)
     fun onApp(pkg: String, view: View)
     fun onAppHeld(pkg: String, view: View)
     fun onAllApps(view: View)
@@ -67,6 +71,7 @@ class Capsule(
     private var live: LiveView? = null
     private var status: StatusView? = null
     private var spia: SpiaView? = null
+    private var lume: LumeView? = null
     private var spiaLamps: List<Lit> = emptyList()
     private var spiaCompact = false
 
@@ -148,6 +153,21 @@ class Capsule(
         }
     }
 
+    /** Tells the bar where the hand is, and when a gesture begins and ends (Lume: Concentrato). */
+    override fun dispatchTouchEvent(e: android.view.MotionEvent): Boolean {
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                // A touch on Lume itself is Lume's own business, not a gesture on the bar
+                onLume = lume?.let { l -> e.x >= l.left && e.x <= l.right && e.y >= l.top && e.y <= l.bottom } == true
+                if (!onLume) actions.onCapsuleTouch(true, e.rawX, e.rawY)
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
+                if (!onLume) actions.onCapsuleTouch(false, e.rawX, e.rawY)
+        }
+        return super.dispatchTouchEvent(e)
+    }
+    private var onLume = false
+
     /** Docked against a side edge, the capsule stands upright. */
     var vertical = false
         set(v) {
@@ -190,7 +210,8 @@ class Capsule(
         restAnim?.cancel()
         val loc = IntArray(2).also { getLocationOnScreen(it) }
         val along = if (vertical) (if (y.isNaN()) height / 2f else y - loc[1]) else (if (x.isNaN()) width / 2f else x - loc[0])
-        items().forEach { v ->
+        // Lume stays in the trim while the bar rests: a moment may still call it out
+        items().filter { it !is LumeView }.forEach { v ->
             val c = if (vertical) v.top + v.height / 2f else v.left + v.width / 2f
             val d = kotlin.math.abs(c - along) / context.dp(iconDp)
             v.animate().cancel()
@@ -340,6 +361,7 @@ class Capsule(
         live?.let { it.setGlow(glows[zoneOf(it)]) }
         status?.let { it.setInk(inks[zoneOf(it)]) }
         spia?.let { it.setGlass(luminance(fills[zoneOf(it)]) < 0.5f) }
+        lume?.let { it.setInk(inks[zoneOf(it)]) }
         dividers.forEach { it.setBackgroundColor((inks[zoneOf(it)] and 0x00FFFFFF) or 0x30000000) }
         indicators.values.forEach { v ->
             val frame = v.parent as? View ?: v
@@ -612,6 +634,7 @@ class Capsule(
         live = null
         status = null
         spia = null
+        lume = null
         slots.forEachIndexed { i, slot ->
             val v = when (slot) {
                 Slot.AllApps -> glyph(Glyph.GRID) { actions.onAllApps(it) }.also { grid = it as GlyphView }.apply {
@@ -651,6 +674,11 @@ class Capsule(
                     // Tap or hold: either way the lamps open into their lines, each one to act on
                     v.setOnClickListener { it.tick(); ripple(it); actions.onSpia(it) }
                     v.setOnLongClickListener { it.thud(); actions.onSpia(it); true }
+                }
+                // Handles its own touches: tap, hold, or a swipe across the bar
+                Slot.Lume -> LumeView(context, context.dp(iconDp), vertical, actions).also { v ->
+                    lume = v
+                    v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
                 }
                 is Slot.App -> appIcon(slot)
                 is Slot.AppPair -> pairIcon(slot)

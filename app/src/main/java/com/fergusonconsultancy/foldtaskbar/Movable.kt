@@ -76,6 +76,11 @@ class BarHost(context: Context, private val listener: DragListener) : FrameLayou
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         // Never handed to the icons: an outside touch carries no position worth acting on
         if (ev.actionMasked == MotionEvent.ACTION_OUTSIDE) { listener.onOutside(); return true }
+        // Lume holding a moment answers its own touches, even while the bar rests as trim
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && listener.isResting(this) && Lume.moment != null && onLume(this, ev.rawX, ev.rawY)) {
+            downX = ev.rawX; downY = ev.rawY; armed = false; dragging = false; appDrag = null
+            return super.dispatchTouchEvent(ev)
+        }
         if (ev.actionMasked == MotionEvent.ACTION_DOWN && listener.isResting(this)) {
             waking = true; slid = false
             downX = ev.rawX; downY = ev.rawY
@@ -151,6 +156,17 @@ class BarHost(context: Context, private val listener: DragListener) : FrameLayou
         }
         return super.dispatchTouchEvent(ev)
     }
+}
+
+/** Whether a point on screen falls on a Lume inside [v], with a little room around it. */
+private fun onLume(v: View, x: Float, y: Float): Boolean {
+    if (v is LumeView) {
+        val loc = IntArray(2).also { v.getLocationOnScreen(it) }
+        val pad = v.context.dp(6)
+        return x >= loc[0] - pad && x <= loc[0] + v.width + pad && y >= loc[1] - pad && y <= loc[1] + v.height + pad
+    }
+    if (v is android.view.ViewGroup) for (i in 0 until v.childCount) if (onLume(v.getChildAt(i), x, y)) return true
+    return false
 }
 
 /**

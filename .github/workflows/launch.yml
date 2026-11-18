@@ -60,7 +60,11 @@ jobs:
         run: |
           [ -d shots ] || exit 0
           cd shots
-          git init -q -b screens-${{ matrix.name }}
+          # Main keeps the usual branch; other branches get their own, so two pieces of work
+          # tested at once never overwrite each other's screenshots (18 Nov 2026)
+          dest=screens-${{ matrix.name }}
+          [ "${GITHUB_REF_NAME}" = "main" ] || dest="$dest-${GITHUB_REF_NAME//\//-}"
+          git init -q -b "$dest"
           git config user.name "Fold Taskbar shapes test"; git config user.email "actions@users.noreply.github.com"
           git add -A && git commit -qm "Screens from ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" screens-${{ matrix.name }}
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" "$dest"
