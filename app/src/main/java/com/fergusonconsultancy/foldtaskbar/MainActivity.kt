@@ -58,6 +58,7 @@ class MainActivity : Activity() {
     /** Tests: show Dittico's leaf over whatever was in front (the emulator cannot fold). */
     private fun previewDittico(i: Intent?): Boolean {
         if (i?.getStringExtra("open") != "dittico") return false
+        android.util.Log.i("Dittico", "preview asked; service ${if (TaskbarService.instance == null) "not running" else "running"}")
         TaskbarService.instance?.previewDittico()
         finish(); overridePendingTransition(0, 0)
         return true

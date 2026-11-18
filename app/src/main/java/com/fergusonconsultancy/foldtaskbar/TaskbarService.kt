@@ -1049,8 +1049,9 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     /** Tests only: the leaf as if Settings were in front and paired with Fold Taskbar. */
     fun previewDittico() = main.post {
-        val mine = apps.entry("com.android.settings") ?: return@post
-        val theirs = apps.entry(packageName) ?: return@post
+        val mine = apps.entry("com.android.settings") ?: run { android.util.Log.i("Dittico", "no Settings entry"); return@post }
+        val theirs = apps.entry(packageName) ?: run { android.util.Log.i("Dittico", "no own entry"); return@post }
+        android.util.Log.i("Dittico", "preview: ${theirs.label} beside ${mine.label}")
         showGhost(mine, theirs)
     }
 
