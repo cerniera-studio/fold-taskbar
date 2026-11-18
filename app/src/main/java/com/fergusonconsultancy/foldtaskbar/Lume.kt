@@ -124,7 +124,8 @@ class LumeView(context: Context, private val sizePx: Int, private val vertical: 
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f
         val cy = if (vertical) height / 2f else sizePx / 2f
-        val champagne = Kit.Fixed.CHAMPAGNE
+        // Champagne over dark glass; the day's deeper champagne over light glass, so it still reads
+        val champagne = if (lum(ink) < 0.5f) DAY_CHAMPAGNE else Kit.Fixed.CHAMPAGNE
         // The point: barely there at rest, brighter while a moment is held
         val point = context.dp(1.6f) + context.dp(0.9f) * lit
         val big = sizePx * 0.40f
@@ -243,5 +244,10 @@ class LumeView(context: Context, private val sizePx: Int, private val vertical: 
             }
         }
         return true
+    }
+
+    companion object {
+        /** Avorio's champagne, fixed: Lume over light glass. */
+        const val DAY_CHAMPAGNE = 0xFF9A7A45.toInt()
     }
 }
