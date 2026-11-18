@@ -36,7 +36,7 @@ done
 leaf() {
   adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard
   adb shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 4
-  adb shell am start -n $PKG/.MainActivity --activity-no-animation --es open dittico >/dev/null
+  adb shell am start -n $PKG/.MainActivity --activity-no-animation --activity-clear-task -f 0x10000000 --es open dittico >/dev/null
   sleep 0.45; shot "$1-leaf-born"
   sleep 1.2; shot "$1-leaf-rest"
   sleep 2.2; shot "$1-leaf-waiting"
