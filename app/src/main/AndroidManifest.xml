@@ -38,6 +38,8 @@
     </queries>
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Fluido (18 Nov 2026): Lume's leaving soon reads the next event, once allowed in Settings -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <application
         android:icon="@mipmap/ic_launcher"

@@ -36,6 +36,12 @@ class MainActivity : Activity() {
     private lateinit var workRow: Row
     private lateinit var arrivingRow: Row
     private lateinit var riservaSection: View
+    private lateinit var fluidoCard: View
+    private lateinit var fluidoRows: List<View>
+    private lateinit var calendarEnd: TextView
+    private lateinit var rainRow: Row
+    private lateinit var listenEnd: TextView
+    private lateinit var sensoFold: Fold
     private lateinit var presenceDetail: TextView
     private lateinit var presencePicker: Segmented
     private lateinit var recedeOptions: LinearLayout
@@ -201,6 +207,27 @@ class MainActivity : Activity() {
             spiaRows.forEach { row(it) }
         })
 
+        // ---- Fluido (18 Nov 2026): Lume, the light in the trim that offers what the moment calls for
+        screen.section("Fluido")
+        calendarEnd = endValue("")
+        listenEnd = endValue("")
+        val leavingRow = Row(this, "Leaving soon", "An event within 45 minutes somewhere you'd travel to. Tap Lume to open it in your calendar. Calls and links are left out", calendarEnd) {
+            if (!calendarAllowed()) requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), CALENDAR_REQUEST)
+        }
+        rainRow = Row(this, "Rain coming", "", null)
+        val listeningRow = Row(this, "Listening", "Music starting, or headphones going in with a track paused. Tap Lume to open the player, or to resume", listenEnd) {
+            if (!MediaListener.granted(this)) MediaListener.ask(this)
+        }
+        fluidoRows = listOf(leavingRow, rainRow, listeningRow)
+        fluidoCard = Card(this).apply {
+            row(Row(this@MainActivity, "Lume", "A small champagne light in the bar's trim, at the end nearest your hand. When the moment calls for it, it swells and offers one thing, then recedes. Tap it to act, hold it to see why, swipe it off the bar for nothing more about that today. Off, the bar is as it was",
+                Toggle(this@MainActivity, Prefs.fluido(this@MainActivity)) { Prefs.setFluido(this@MainActivity, it); refresh() }))
+            fluidoRows.forEach { row(it) }
+        }
+        screen.add(fluidoCard)
+        sensoFold = Fold(this, "What Senso sees", "The moments, their confidence and every signal, live")
+        screen.add(sensoFold, px(12))
+
         // ---- Riserva (16 Nov 2026): only once the Riserva app is installed
         riservaSection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -272,6 +299,55 @@ class MainActivity : Activity() {
         screen.add(diag, px(12))
 
         setContentView(screen.root)
+        openFrom(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openFrom(intent)
+    }
+
+    /** "open=fluido" (from Lume's menu, or a test): scrolls to Fluido with what Senso sees unfolded. */
+    private fun openFrom(i: Intent?) {
+        if (i?.getStringExtra("open") != "fluido" || !::sensoFold.isInitialized) return
+        refresh()
+        screen.root.post {
+            if (sensoFold.body.visibility != View.VISIBLE) sensoFold.getChildAt(0).performClick()
+            screen.root.postDelayed({ screen.root.smoothScrollTo(0, (fluidoCard.top - px(56)).coerceAtLeast(0)) }, 300)
+        }
+    }
+
+    private fun calendarAllowed() = checkSelfPermission(android.Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CALENDAR_REQUEST) TaskbarService.instance?.senso?.readCalendar()
+        refresh()
+    }
+
+    /** Fluido's rows and the live debug view, from the running bar's Senso. */
+    private fun refreshFluido() {
+        val on = Prefs.fluido(this)
+        fluidoRows.forEach { it.visibility = if (on) View.VISIBLE else View.GONE }
+        val cal = calendarAllowed()
+        calendarEnd.text = if (cal) "Allowed" else "Allow  ›"
+        calendarEnd.setTextColor(if (cal) Kit.GOOD else Kit.CHAMPAGNE)
+        val access = MediaListener.granted(this)
+        listenEnd.text = if (access) "Allowed" else "Allow  ›"
+        listenEnd.setTextColor(if (access) Kit.GOOD else Kit.CHAMPAGNE)
+        val sharing = runCatching { packageManager.resolveContentProvider(Senso.RAIN.authority!!, 0) != null }.getOrDefault(false)
+        rainRow.setSub(if (sharing) "Cielo's next rain within two hours, surer the sooner and likelier it is. Tap Lume to open Cielo"
+            else "Waits for Cielo to share its forecast with the family. Until then Lume never mentions rain")
+        val senso = TaskbarService.instance?.senso
+        sensoFold.visibility = if (on) View.VISIBLE else View.GONE
+        val shown = (sensoFold.body.getChildAt(0) as? SensoView)
+        if (senso != null && shown?.tag !== senso) {
+            sensoFold.body.removeAllViews()
+            sensoFold.body.addView(SensoView(this, senso).also { it.tag = senso })
+        } else if (senso == null && shown != null || senso == null && sensoFold.body.childCount == 0) {
+            sensoFold.body.removeAllViews()
+            sensoFold.body.addView(text("Switch the bar on, with Lume, to see what Senso sees.", 13.5f, Kit.MUTED).apply { setPadding(0, px(4), 0, px(4)) })
+        }
     }
 
     override fun onResume() {
@@ -327,6 +403,7 @@ class MainActivity : Activity() {
         accessEnd.text = if (access) "Allowed" else "Allow  ›"
         accessEnd.setTextColor(if (access) Kit.GOOD else Kit.CHAMPAGNE)
         TaskbarService.instance?.liveCheck()
+        refreshFluido()
         val pack = Prefs.iconPack(this)
         val packs = IconPack.installed(this)
         iconsRow.setSub(when {
@@ -573,10 +650,12 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        const val CALENDAR_REQUEST = 41
         val DOCTRINE_NOTES = listOf(
             "Membrane" to "The bar is one surface. Lift an app out and its neighbours are drawn towards the gap, nearest most, while the glass swells where it left, then springs back. A tap still ripples outwards. Membrana switching treats the arriving app as a skin whose edges bow against their own speed.",
             "Concentrato" to "While an app is carried out of the bar, everything else on the bar steps back. Drag fast and the drop guide sheds its outline, crease line and words, leaving the app and the place it will land. Fling the grid and its labels fall away, returning as it slows.",
             "The Giulietta principle" to "In apps, Trim lets the bar rest as a fine line of trim. It wakes under your finger, the icons rising outwards from where you touched, and swelling as your finger slides past them. Lift on one to open it. The first touch only ever wakes it, so nothing opens by accident.",
+            "Lume (Fluido)" to "The one place the bar shows it has noticed something. A champagne point in the trim, it swells into a ring when Senso, the family's context engine, is sure enough of a moment, and the icons beside it yield as it grows. During a gesture on the bar it shrinks back to a point; 3.2 seconds after the last touch it recedes. Rules only, worked out on the phone. One proposal at a time, silence by default, every one dismissable and able to say why.",
         )
         val DESIGN_NOTES = listOf(
             "Smoked glass" to "Reads the screen beyond each of eight stretches of the bar. Dark over light content, light over dark, with a trace of the colour underneath.",
@@ -603,6 +682,7 @@ class MainActivity : Activity() {
             "Two handles" to "With the hinge pair, each half has its own handle: the grid button and a grip of six dots. Hold either and slide to move that half alone.",
         )
         val GUIDE = listOf(
+            "Lume" to "Tap the ring to act: Cielo for rain, your calendar for the next event, the player for music. Tap a lit point to see what it holds. Hold it for why. Swipe it up or down off the bar and it says nothing more about that today.",
             "Switching" to "Tap an app to switch to it. Hold an app for its menu: pin, pair and more.",
             "Split screen and pop-ups" to "Press an app and slide it out of the bar for a split screen, or to the centre for a pop-up. In the grid, hold, then slide.",
             "Moving the bar" to "Hold the grid button or the grip and slide. Let go near an edge and it docks, upright on the sides. Near the crease it centres on it. Throw it mostly off the screen to collapse it to a tab.",

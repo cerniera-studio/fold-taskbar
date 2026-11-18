@@ -31,12 +31,42 @@ for s in "5-main-portrait-bar 1503x1568 280" "6-main-landscape-bar 1568x1503 280
   adb shell input keyevent KEYCODE_HOME; sleep 5; shot "$1-home"
   adb shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 5; shot "$1-over-app"
 done
+# Lume (Fluido phase 1, 18 Nov 2026): signals injected into the bar's Senso, Lume photographed as it
+# offers each moment and recedes, and what Senso decided read back from files/senso.json
+fails=0
+inject() { adb shell "am broadcast -a com.cerniera.senso.INJECT -p $PKG $1" >/dev/null; }
+expect() {
+  got=$(adb shell run-as $PKG cat files/senso.json | tr -d '\r' | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["offered"] or "none")' 2>/dev/null)
+  if [ "$got" = "$2" ]; then echo "::notice::Lume $1: Senso offered $got"
+  else echo "::error::Lume $1: expected $2, Senso offered ${got:-nothing readable}"; fails=$((fails+1)); fi
+}
+size 1503x1568 280
+adb shell input keyevent KEYCODE_HOME; sleep 5
+inject "--ez clear true --es at 14:00 --es undismiss all"; sleep 2;                                      shot "8a-lume-at-rest"; expect at-rest none
+inject "--es rain_in 40 --es rain_chance 80"; sleep 1;                                                    shot "8b-lume-rain-offered"; expect rain rain_coming
+sleep 4;                                                                                                  shot "8c-lume-rain-receded"
+inject "--ez clear true --es at 14:00 --es event_in 20 --es event_title Dentist --es event_where 'Park Square'"; sleep 1; shot "8d-lume-leaving-soon"; expect leaving leaving_soon
+inject "--ez clear true --es at 14:00 --es playing Teardrop --es artist 'Massive Attack' --es headphones true"; sleep 1; shot "8e-lume-listening"; expect listening listening
+inject "--es dismiss listening"; sleep 1;                                                                 shot "8f-lume-listening-dismissed"; expect dismissed none
+inject "--es undismiss all --ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80"; sleep 4
+size 1568x1503 280
+adb shell input keyevent KEYCODE_HOME; sleep 4
+inject "--ez clear true --es at 14:00 --es rain_in 30 --es rain_chance 90"; sleep 1;                     shot "8g-lume-rain-landscape"
+# What Senso sees, in the settings
+size 1503x1568 280
+inject "--ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80 --es event_in 70 --es event_title Dentist --es event_where 'Park Square'"; sleep 2
+adb shell am start -W --activity-clear-top -n $PKG/.MainActivity --es open fluido >/dev/null; sleep 6; shot "9a-settings-fluido"
+adb shell input swipe 400 1200 400 400 400; sleep 1.5; shot "9b-settings-senso-moments"
+adb shell input swipe 400 1200 400 400 400; sleep 1.5; shot "9c-settings-senso-signals"
 size 823x1920 320; adb shell input keyevent KEYCODE_HOME; sleep 4; shot "7-cover-bar-hidden"
 adb shell wm size reset; adb shell wm density reset
 adb logcat -d > logcat.txt
+adb shell run-as $PKG cat files/senso.json > shots/senso.json 2>/dev/null
+adb shell "run-as $PKG cat shared_prefs/fold_taskbar_log.xml" > shots/event-log.xml 2>/dev/null
 if grep -q "FATAL EXCEPTION" logcat.txt; then
   grep -A 40 "FATAL EXCEPTION" logcat.txt | grep -E "AndroidRuntime" | head -40 | sed 's/^.*AndroidRuntime: //' | while IFS= read -r line; do echo "::error::$line"; done
   exit 1
 fi
+[ $fails -gt 0 ] && { echo "::error::$fails Lume scenario(s) failed"; exit 1; }
 echo "::notice::Fold Taskbar ran in every shape without a crash"
 exit 0
