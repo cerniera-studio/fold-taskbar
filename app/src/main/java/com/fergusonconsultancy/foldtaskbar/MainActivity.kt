@@ -61,10 +61,26 @@ class MainActivity : Activity() {
     private lateinit var logText: TextView
     private lateinit var versionText: TextView
 
+    /** Tests: show Dittico's leaf over whatever was in front (the emulator cannot fold). */
+    private fun previewDittico(i: Intent?): Boolean {
+        if (i?.getStringExtra("open") != "dittico") return false
+        android.util.Log.i("Dittico", "preview asked; service ${if (TaskbarService.instance == null) "not running" else "running"}")
+        TaskbarService.instance?.previewDittico()
+        finish(); overridePendingTransition(0, 0)
+        return true
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        previewDittico(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Crash.install(this, "Fold Taskbar")
         if (Crash.show(this, "Fold Taskbar")) return
+        // Tests: show Dittico's leaf over whatever was in front (the emulator cannot fold)
+        if (previewDittico(intent)) return
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         screen = Screen(this, "Fold Taskbar", "Galaxy Z Fold 8 Ultra")
@@ -189,7 +205,7 @@ class MainActivity : Activity() {
         // ---- Dittico (18 Nov 2026): a slow unfold offers the other half of a saved pair
         screen.section("Dittico")
         screen.add(Card(this).apply {
-            row(Row(this@MainActivity, "Dittico", "Unfold slowly while in an app you have paired, and its partner waits on the empty half for a moment. Tap it to split the screen; leave it and it sinks back. A fast unfold offers nothing. To save a pair, split the screen between two apps and hold the grid button",
+            row(Row(this@MainActivity, "Dittico", "Unfold slowly while in an app you have paired, and its partner opens out of the crease and waits six seconds, its lamps counting down (a finger on it holds them). Tap it to split the screen; leave it and it sinks back. A fast unfold offers nothing. To save a pair, split the screen between two apps and hold the grid button",
                 Toggle(this@MainActivity, Prefs.dittico(this@MainActivity)) { Prefs.setDittico(this@MainActivity, it) }))
         })
 
@@ -664,7 +680,7 @@ class MainActivity : Activity() {
             "Avorio, Carbonio, Ceramica" to "Three more adaptive finishes. Avorio is the Giulietta's ivory leather, always the light one, deepening to warm stone over bright screens, with rosso marking the app in use. Carbonio is Bauhaus restraint, always the dark one, lifting to charcoal with a brighter edge over dark screens so its outline holds. Ceramica is Gaudí's glazed tile: each stretch of the bar fires the hue beneath it as glaze, pale over dark screens and deep over bright.",
             "One finish, everywhere" to "The app grid wears whatever the bar is wearing, adapted the same way to the screen it opens over. Over a dark screen smoked glass turns to light glass with dark ink in the grid exactly as it does on the bar.",
             "Spia" to "The tell-tale lamps of an Alfa binnacle: no labels, colour alone. Rosso for the people you name, amber for work, green for something arriving, champagne for the Cerniera apps. They stand in columns of up to three and grow into the bar, so the icons beside them ease apart instead of jumping. Each stays lit until its notification is dealt with, here, in the shade or in its app. While an app has the whole screen they fold down to one pip in the colour of the most urgent lamp.",
-            "Dittico" to "A diptych: two panels joined by a hinge. The unfold is when you decide to work properly, so the app you are in is offered its usual partner then, from where you already are, with no trip to an Edge panel. The partner arrives as a ghost from the crease and sinks back into it if you leave it. A fast unfold is Concentrato: you want this one app big, so nothing is offered.",
+            "Dittico" to "A diptych: two panels joined by a hinge. The unfold is when you decide to work properly, so the app you are in is offered its usual partner then, from where you already are, with no trip to an Edge panel. The partner is the second leaf of the diptych: a champagne seam lights on the crease and the leaf swells out of it, bowed like a meniscus, overshooting a touch before it snaps taut, with the icon, then the eyebrow, then the name (in Italiana) following it out. Tight corners at the hinge, generous ones at the far edge, and light pooling from the hinge. Along the hinge edge runs a line of rosso beads, the Giulietta’s tail light: they go out one by one over six seconds, so the wait is always visible. A finger on the leaf pauses them and the leaf leans towards it; lifting on it splits the screen with a champagne sweep through the beads. Left alone, the words go first, the leaf is drawn back into the crease, and the last point of light dips into the hinge. A fast unfold is Concentrato: you want this one app big, so nothing is offered.",
             "Profile" to "Round is the capsule, its ends fully rounded. Slim is a lower, flatter slab with tighter corners: Bauhaus in its restraint, giving the screen back a few points.",
             "Live" to "Two ideas from the iPhone Duo's status column, taken only where a need puts them. Now playing gives the bar a new ability: the music that is playing, at the bar's outer end. The time and battery appear only when an app has hidden the status bar, because Samsung's own status bar cannot be moved, and a second clock beside it would be ornament no need put there. The waveform moves with the playing state, not the sound: the bar cannot hear the audio.",
             "Show on unfold" to "A bar out of sight is only found by remembering where you left it, and after a night folded nobody does. So with Hide or Trim, every unfold shows where the bar lives, then lets it rest again. There is no timer: it happens every time, so you always know what to expect. Leaving, the bar sinks into the edge it rests against, so every hide is a reminder of its place too.",

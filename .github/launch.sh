@@ -9,6 +9,7 @@ APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
 for i in $(seq 1 30); do [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 2; done
 sleep 30
 adb install -r "$APK"
+adb shell svc power stayon true; adb shell settings put system screen_off_timeout 1800000
 adb logcat -c
 mkdir -p shots
 shot() { adb exec-out screencap -p > "shots/$1.png"; echo "shot $1"; }
@@ -42,29 +43,46 @@ expect() {
 }
 size 1503x1568 280
 adb shell input keyevent KEYCODE_HOME; sleep 5
-inject "--ez clear true --es at 14:00 --es undismiss all"; sleep 2;                                      shot "8a-lume-at-rest"; expect at-rest none
-inject "--es rain_in 40 --es rain_chance 80"; sleep 1;                                                    shot "8b-lume-rain-offered"; expect rain rain_coming
-sleep 4;                                                                                                  shot "8c-lume-rain-receded"
-inject "--ez clear true --es at 14:00 --es event_in 20 --es event_title Dentist --es event_where 'Park Square'"; sleep 1; shot "8d-lume-leaving-soon"; expect leaving leaving_soon
-inject "--ez clear true --es at 14:00 --es playing Teardrop --es artist 'Massive Attack' --es headphones true"; sleep 1; shot "8e-lume-listening"; expect listening listening
-inject "--es dismiss listening"; sleep 1;                                                                 shot "8f-lume-listening-dismissed"; expect dismissed none
+inject "--ez clear true --es at 14:00 --es undismiss all"; sleep 2;                                      shot "10a-lume-at-rest"; expect at-rest none
+inject "--es rain_in 40 --es rain_chance 80"; sleep 1;                                                    shot "10b-lume-rain-offered"; expect rain rain_coming
+sleep 4;                                                                                                  shot "10c-lume-rain-receded"
+inject "--ez clear true --es at 14:00 --es event_in 20 --es event_title Dentist --es event_where 'Park Square'"; sleep 1; shot "10d-lume-leaving-soon"; expect leaving leaving_soon
+inject "--ez clear true --es at 14:00 --es playing Teardrop --es artist 'Massive Attack' --es headphones true"; sleep 1; shot "10e-lume-listening"; expect listening listening
+inject "--es dismiss listening"; sleep 1;                                                                 shot "10f-lume-listening-dismissed"; expect dismissed none
 inject "--es undismiss all --ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80"; sleep 4
 size 1568x1503 280
 adb shell input keyevent KEYCODE_HOME; sleep 4
 inject "--ez clear true --es at 14:00"; sleep 2
-inject "--es event_in 15 --es event_title Dentist --es event_where 'Park Square'"; sleep 1;            shot "8g-lume-leaving-landscape"
+inject "--es event_in 15 --es event_title Dentist --es event_where 'Park Square'"; sleep 1;            shot "10g-lume-leaving-landscape"
 # What Senso sees, in the settings
 size 1503x1568 280
 inject "--ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80 --es event_in 70 --es event_title Dentist --es event_where 'Park Square'"; sleep 2
-adb shell am start -W --activity-clear-top -n $PKG/.MainActivity --es open fluido >/dev/null; sleep 6; shot "9a-settings-fluido"
-adb shell input swipe 400 1200 400 400 400; sleep 1.5; shot "9b-settings-senso-moments"
-adb shell input swipe 400 1200 400 400 400; sleep 1.5; shot "9c-settings-senso-signals"
+adb shell am start -W --activity-clear-top -n $PKG/.MainActivity --es open fluido >/dev/null; sleep 6; shot "11a-settings-fluido"
+adb shell input swipe 400 1200 400 400 400; sleep 1.5; shot "11b-settings-senso-moments"
+adb shell input swipe 400 1200 400 400 400; sleep 1.5; shot "11c-settings-senso-signals"
+# Dittico's leaf over Settings, upright then turned: being born, at rest, part-way through the wait
+leaf() {
+  adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard
+  adb shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 4
+  adb shell am start -n $PKG/.MainActivity -f 0x10018000 --es open dittico
+  sleep 0.45; shot "$1-leaf-born"
+  sleep 1.2; shot "$1-leaf-rest"
+  sleep 2.2; shot "$1-leaf-waiting"
+  sleep 4.5; shot "$1-leaf-gone"
+  adb logcat -d -s Dittico:I | tail -5; adb logcat -d | grep -A25 -E "FATAL EXCEPTION|Crash|Kit" | grep -iE "dittico|foldtaskbar|exception|at com.|Caused" | head -30
+  adb shell dumpsys activity activities | grep -m2 -E "mResumedActivity|topResumedActivity"
+}
+size 1503x1568 280; sleep 6; leaf 8-main-portrait
+adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 3
+leaf 9-main-turned
+adb shell settings put system user_rotation 0; sleep 2
 size 823x1920 320; adb shell input keyevent KEYCODE_HOME; sleep 4; shot "7-cover-bar-hidden"
 adb shell wm size reset; adb shell wm density reset
 adb logcat -d > logcat.txt
 adb shell run-as $PKG cat files/senso.json > shots/senso.json 2>/dev/null
 adb shell "run-as $PKG cat shared_prefs/fold_taskbar_log.xml" > shots/event-log.xml 2>/dev/null
-if grep -q "FATAL EXCEPTION" logcat.txt; then
+# Only Fold Taskbar's own crashes count (the emulator's Bluetooth and Gmail fall over on their own)
+if grep -A 2 "FATAL EXCEPTION" logcat.txt | grep -q "Process: $PKG"; then
   grep -A 40 "FATAL EXCEPTION" logcat.txt | grep -E "AndroidRuntime" | head -40 | sed 's/^.*AndroidRuntime: //' | while IFS= read -r line; do echo "::error::$line"; done
   exit 1
 fi
