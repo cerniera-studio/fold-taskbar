@@ -124,7 +124,11 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     // ---- Lifecycle ----------------------------------------------------------------
 
+    /** Nodo's knots that wait for an app: told when one comes to the front (NodoCues.kt). */
+    private val nodoCues by lazy { NodoCues(this) }
+
     override fun onServiceConnected() {
+        nodoCues.start()
         // If anything ever does take the service down, the reason is written to the event log
         // first, so it can be found and fixed rather than guessed at (29 Oct 2026)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
@@ -236,6 +240,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     }
 
     override fun onDestroy() {
+        nodoCues.stop()
         if (::nowPlaying.isInitialized) nowPlaying.stop()
         senso?.let { it.unwatch(sensoChanged); it.stop() }
         senso = null
@@ -646,7 +651,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Main thread. Cheap when nothing has changed. */
     private fun apply() {
         if (!::wm.isInitialized) return
-        onScreen.firstOrNull()?.let { senso?.front(it) }
+        onScreen.firstOrNull()?.let { senso?.front(it); nodoCues.front(it) }
         statusPx = statusInset()
         recordRecents()
         reportOpenTime()
