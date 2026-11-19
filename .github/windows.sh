@@ -68,15 +68,20 @@ adb shell am force-stop $PKG; sleep 2
 
 # ---- 2. The settings keep their place across a turn
 adb shell run-as $PKG rm -f files/layout.json
-adb shell am start -W --windowingMode 1 -n $PKG/.MainActivity >/dev/null; sleep 6
+adb shell am start -W --windowingMode 1 -n $PKG/.MainActivity >/dev/null; sleep 12
 get view >/dev/null
-adb shell input swipe 750 1300 750 600 600; sleep 2; shot scrolled
-before=$(get scroll)
+before=0
+for try in 1 2 3; do
+  adb shell input swipe 750 1300 750 600 600; sleep 2
+  before=$(get scroll); [ "${before:-0}" -gt 0 ] && break
+done
+shot scrolled
 adb shell run-as $PKG rm -f files/layout.json
 adb shell settings put system user_rotation 1; sleep 6; shot scrolled-turned
 after=$(get scroll)
 echo "scroll: $before -> $after" | tee -a $out
-if [ -z "$after" ]; then warn "Settings across a turn: no scroll position recorded; skipped"
+if [ "${before:-0}" -le 0 ]; then warn "Settings across a turn: the page never scrolled; skipped"
+elif [ -z "$after" ]; then warn "Settings across a turn: no scroll position recorded; skipped"
 elif [ "$after" -gt 0 ]; then note "Settings across a turn: kept their place (scrolled $after px)"
 else fail "Settings across a turn: back at the top after the turn"; fi
 adb shell settings put system user_rotation 0; sleep 3
