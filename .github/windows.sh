@@ -75,6 +75,12 @@ for try in 1 2 3; do
   adb shell input swipe 750 1300 750 600 600; sleep 2
   before=$(get scroll); [ "${before:-0}" -gt 0 ] && break
 done
+# If the launch splash is still catching touches, scroll by keyboard instead (focus moving down
+# the page scrolls it, which is also Tier 2's keyboard check)
+if [ "${before:-0}" -le 0 ]; then
+  for k in $(seq 1 14); do adb shell input keyevent KEYCODE_DPAD_DOWN; done; sleep 2
+  before=$(get scroll); echo "scrolled by keyboard: $before" | tee -a $out
+fi
 shot scrolled
 adb shell run-as $PKG rm -f files/layout.json
 adb shell settings put system user_rotation 1; sleep 6; shot scrolled-turned
