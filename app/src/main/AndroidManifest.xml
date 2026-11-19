@@ -9,7 +9,6 @@
         <package android:name="com.cerniera.riserva" />
         <!-- Nodo (18 Nov 2026): which apps its knots wait for, and telling it when one opens -->
         <package android:name="com.cerniera.nodo" />
-        <provider android:authorities="com.cerniera.nodo.cues" />
         <intent><action android:name="org.adw.launcher.THEMES" /></intent>
         <intent><action android:name="com.novalauncher.THEME" /></intent>
         <intent><action android:name="com.gau.go.launcherex.theme" /></intent>
