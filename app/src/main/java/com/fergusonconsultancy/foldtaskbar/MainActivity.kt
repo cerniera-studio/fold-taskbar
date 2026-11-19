@@ -311,7 +311,19 @@ class MainActivity : Activity() {
         screen.add(diag, px(12))
 
         setContentView(screen.root)
+        record()
         openFrom(intent)
+    }
+
+    /** Debug builds only: the settings' size and scroll position, for the windows test. */
+    private fun record() {
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        val root = screen.root
+        root.viewTreeObserver.addOnGlobalLayoutListener {
+            val col = (root as? android.view.ViewGroup)?.getChildAt(0)
+            runCatching { java.io.File(filesDir, "layout.json").writeText(
+                "{\"view\": [${root.width}, ${root.height}], \"column\": ${col?.width ?: -1}, \"scroll\": ${root.scrollY}}") }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
