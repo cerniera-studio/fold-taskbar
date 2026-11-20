@@ -25,6 +25,9 @@ sleep 30
 adb shell input keyevent 82
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
+# Animations off again after the reboot: on this emulator the launch splash can otherwise stick
+# half-faded over the settings and catch every touch and key
+for a in window_animation_scale transition_animation_scale animator_duration_scale; do adb shell settings put global $a 0; done
 adb logcat -c
 
 # The main screen, upright
