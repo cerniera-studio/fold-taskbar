@@ -23,6 +23,9 @@ adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done
 sleep 30
 adb shell input keyevent 82
+# No "isn't responding" dialogs: after the reboot the emulator's own launcher can stall, and its
+# dialog sits over the app, catching every touch and key (app crashes are still caught from logcat)
+adb shell settings put global hide_error_dialogs 1
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 # Animations off again after the reboot: on this emulator the launch splash can otherwise stick
