@@ -26,6 +26,10 @@ adb shell input keyevent 82
 # No "isn't responding" dialogs: after the reboot the emulator's own launcher can stall, and its
 # dialog sits over the app, catching every touch and key (app crashes are still caught from logcat)
 adb shell settings put global hide_error_dialogs 1
+# Three-button navigation: the launcher's swipe-up gesture monitor stalled after the reboot and held
+# up input to every app; without gestures it isn't there. Then restart the launcher.
+adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton
+adb shell am force-stop com.google.android.apps.nexuslauncher; sleep 5
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 # Animations off again after the reboot: on this emulator the launch splash can otherwise stick
