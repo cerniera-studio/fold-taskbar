@@ -36,6 +36,8 @@ done
 # offers each moment and recedes, and what Senso decided read back from files/senso.json
 fails=0
 inject() { adb shell "am broadcast -a com.cerniera.senso.INJECT -p $PKG $1" >/dev/null; }
+# Lume is off by default (21 Nov 2026): switch it on as the Fluido switch would
+adb shell am start -W -n $PKG/.MainActivity --es lume on >/dev/null; sleep 4
 expect() {
   got=$(adb shell run-as $PKG cat files/senso.json | tr -d '\r' | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["offered"] or "none")' 2>/dev/null)
   if [ "$got" = "$2" ]; then echo "::notice::Lume $1: Senso offered $got"

@@ -302,7 +302,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     override fun onSharedPreferenceChanged(p: SharedPreferences?, key: String?) {
         if (key == "presence") main.post { restIfTrim(); listenForScrolls() }
         if (key == "live_music") main.post { liveCheck() }
-        if (key == "fluido") main.post { fluidoCheck(); liveCheck() }
+        if (key == Prefs.FLUIDO) main.post { fluidoCheck(); liveCheck() }
         if (key != null && key.startsWith("spia")) main.post { liveCheck(); Spia.listener?.relight() }
         if (key == "riserva_meter" && ::meter.isInitialized) main.post { meter.start() }
         if (key == Prefs.ICON_PACK) {

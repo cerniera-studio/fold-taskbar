@@ -279,9 +279,14 @@ object Prefs {
     fun spia(c: Context) = of(c).getBoolean("spia", true)
     fun setSpia(c: Context, v: Boolean) = of(c).edit().putBoolean("spia", v).apply()
 
-    /** Fluido (18 Nov 2026): Lume in the trim, reading Senso. Off, the bar behaves as it did before. */
-    fun fluido(c: Context) = of(c).getBoolean("fluido", true)
-    fun setFluido(c: Context, v: Boolean) = of(c).edit().putBoolean("fluido", v).apply()
+    /**
+     * Fluido (18 Nov 2026): Lume in the trim, reading Senso. Off, the bar behaves as it did before.
+     * Off by default from 21 Nov 2026 (Mechack found it added little; Momento in Fold Widgets carries
+     * the idea). A new key, so the earlier default of on doesn't carry over.
+     */
+    fun fluido(c: Context) = of(c).getBoolean(FLUIDO, false)
+    fun setFluido(c: Context, v: Boolean) = of(c).edit().putBoolean(FLUIDO, v).apply()
+    const val FLUIDO = "lume_on"
     fun spiaPeople(c: Context): List<String> = of(c).getString("spia_people", "").orEmpty()
         .split('\n').map { it.trim() }.filter { it.isNotEmpty() }
     fun setSpiaPeople(c: Context, v: List<String>) = of(c).edit().putString("spia_people", v.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("\n")).apply()
