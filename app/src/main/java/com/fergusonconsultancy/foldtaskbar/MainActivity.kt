@@ -334,6 +334,7 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Dittico's preview (tests) or Fluido's settings (Lume's menu)
+        intent.getStringExtra("lume")?.let { Prefs.setFluido(this, it == "on"); refresh() }
         if (!previewDittico(intent)) openFrom(intent)
     }
 
