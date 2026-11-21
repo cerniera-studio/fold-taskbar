@@ -77,6 +77,8 @@ class MainActivity : Activity() {
         if (Crash.show(this, "Fold Taskbar")) return
         // Tests: show Dittico's leaf over whatever was in front (the emulator cannot fold)
         if (previewDittico(intent)) return
+        // Tests: "lume=on" switches Lume on, as the Fluido switch would (it is off by default)
+        intent?.getStringExtra("lume")?.let { Prefs.setFluido(this, it == "on") }
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         screen = Screen(this, "Fold Taskbar", "Galaxy Z Fold 8 Ultra")
@@ -332,6 +334,7 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Dittico's preview (tests) or Fluido's settings (Lume's menu)
+        intent.getStringExtra("lume")?.let { Prefs.setFluido(this, it == "on"); refresh() }
         if (!previewDittico(intent)) openFrom(intent)
     }
 
