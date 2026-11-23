@@ -16,14 +16,18 @@ android {
         versionName = "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
     }
 
-    // One fixed key for every build, so new APKs install over the old one.
-    // Debug-only key for personal sideloading. Never use it for a store release.
+    // One fixed key for every build, so new APKs install over the old one (new key 23 Nov 2026).
+    // The key file is encrypted; its password lives only in the cerniera-studio org secret
+    // CERNIERA_SIGNING_PASSWORD, which the build workflow passes in. Without it (a local build)
+    // Android's own debug key is used, and that APK will not install over the phone's copy.
+    val signingPassword = System.getenv("CERNIERA_SIGNING_PASSWORD")
     signingConfigs {
-        getByName("debug") {
-            storeFile = rootProject.file("signing/foldtaskbar-debug.jks")
-            storePassword = "foldtaskbar"
+        if (!signingPassword.isNullOrBlank()) getByName("debug") {
+            storeFile = rootProject.file("signing/fold-taskbar-2026.p12")
+            storeType = "pkcs12"
+            storePassword = signingPassword
             keyAlias = "foldtaskbar"
-            keyPassword = "foldtaskbar"
+            keyPassword = signingPassword
         }
     }
 
