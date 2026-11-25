@@ -1,0 +1,5 @@
+task: 18 freeform
+::notice::Settings in a wide pop-up window: the column (1503px) fits the window (1503px wide)
+::notice::Settings in a narrow pop-up window: the column (740px) fits the window (740px wide)
+scroll: 856 -> 856
+::notice::Settings across a turn: kept their place (scrolled 856 px)
