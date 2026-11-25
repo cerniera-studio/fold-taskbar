@@ -225,7 +225,7 @@ class MainActivity : Activity() {
         screen.section("Fluido")
         calendarEnd = endValue("")
         listenEnd = endValue("")
-        val leavingRow = Row(this, "Leaving soon", "An event within 45 minutes somewhere you'd travel to. Tap Lume to open it in your calendar. Calls and links are left out", calendarEnd) {
+        val leavingRow = Row(this, "Leaving soon", "Your next event with a place, from 45 minutes before Partenza's leave-by: the drive in today's traffic, worked out in Fold Widgets (Settings → Partenza). Without an estimate, 45 minutes before the event. Tap Lume to open it in your calendar. Calls and links are left out", calendarEnd) {
             if (!calendarAllowed()) requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), CALENDAR_REQUEST)
         }
         rainRow = Row(this, "Rain coming", "", null)
