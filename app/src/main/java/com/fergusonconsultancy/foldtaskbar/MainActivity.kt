@@ -229,12 +229,12 @@ class MainActivity : Activity() {
             if (!calendarAllowed()) requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), CALENDAR_REQUEST)
         }
         rainRow = Row(this, "Rain coming", "", null)
-        val listeningRow = Row(this, "Listening", "Music starting, or headphones going in with a track paused. Tap Lume to open the player, or to resume", listenEnd) {
+        val listeningRow = Row(this, "Listening", "Only while now playing is off the bar (on it, the thumbnail is the music's light). Music starting, or headphones going in with a track paused. Tap Lume to open the player, or to resume", listenEnd) {
             if (!MediaListener.granted(this)) MediaListener.ask(this)
         }
         fluidoRows = listOf(leavingRow, rainRow, listeningRow)
         fluidoCard = Card(this).apply {
-            row(Row(this@MainActivity, "Lume", "A small champagne light in the bar's trim, at the end nearest your hand. When the moment calls for it, it swells and offers one thing, then recedes. Tap it to act, hold it to see why, swipe it off the bar for nothing more about that today. Off, the bar is as it was",
+            row(Row(this@MainActivity, "Lume", "A small champagne light in the bar's trim, at the end nearest your hand. When the moment calls for it, it swells and offers one thing, then recedes. Tap it to act, hold it for what it means, swipe it off the bar for nothing more about that today. Off, the bar is as it was",
                 Toggle(this@MainActivity, Prefs.fluido(this@MainActivity)) { Prefs.setFluido(this@MainActivity, it); refresh() }))
             fluidoRows.forEach { row(it) }
         }

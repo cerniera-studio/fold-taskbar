@@ -171,11 +171,14 @@ object Spia {
 @SuppressLint("ViewConstructor")
 class SpiaView(context: Context, private val sizePx: Int, private val vertical: Boolean) : View(context) {
     private val strip = context.dp(6)
-    private val lampLong = context.dp(13).toFloat()
+    // 26 Nov 2026: longer along the bar and brighter, so a lamp reads at a glance (they were too faint).
+    // Across the bar they keep their size, which the bar's icon size sets.
+    private val lampLong = context.dp(17).toFloat()
     private val lampShort = context.dp(8).toFloat()
     private val gapPx = context.dp(4).toFloat()
     private val core = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = maxOf(1f, context.resources.displayMetrics.density * 0.75f) }
     private val r = RectF()
     private var lamps: List<Lit> = emptyList()
     private var compact = false
@@ -256,19 +259,33 @@ class SpiaView(context: Context, private val sizePx: Int, private val vertical: 
             val rad = minOf(r.width(), r.height()) / 2f
             // A glow only where light can glow: over dark glass
             if (darkGlass) {
-                glow.color = (lit.kind.colour and 0x00FFFFFF) or ((0x55 * alpha * pulse).toInt() shl 24)
-                val g = RectF(r).apply { inset(-context.dp(3).toFloat(), -context.dp(3).toFloat()) }
-                canvas.drawRoundRect(g, rad + context.dp(3), rad + context.dp(3), glow)
+                // Two layers: a wide soft bloom and a tight bright one, as a lit lens throws light
+                val wide = context.dp(6).toFloat(); val tight = context.dp(2.5f).toFloat()
+                glow.color = (lit.kind.colour and 0x00FFFFFF) or ((0x40 * alpha * pulse).toInt() shl 24)
+                canvas.drawRoundRect(RectF(r).apply { inset(-wide, -wide) }, rad + wide, rad + wide, glow)
+                glow.color = (lit.kind.colour and 0x00FFFFFF) or ((0x99 * alpha * pulse).toInt() shl 24)
+                canvas.drawRoundRect(RectF(r).apply { inset(-tight, -tight) }, rad + tight, rad + tight, glow)
             }
             core.color = lit.kind.colour
             core.alpha = (255 * alpha * (if (darkGlass) pulse else 1f)).toInt().coerceIn(0, 255)
             canvas.drawRoundRect(r, rad, rad, core)
+            // Over light glass there is no glow, so a deeper rim of the lamp's own colour holds its edge
+            if (!darkGlass) {
+                edge.color = darken(lit.kind.colour, 0.4f); edge.alpha = (180 * alpha).toInt().coerceIn(0, 255)
+                canvas.drawRoundRect(r, rad, rad, edge)
+            }
             // A fine bright line on the lozenge's upper edge, the lens catching the light
-            core.color = 0xFFFFFFFF.toInt(); core.alpha = (70 * alpha).toInt()
+            core.color = 0xFFFFFFFF.toInt(); core.alpha = (110 * alpha).toInt()
             val hl = RectF(r.left + rad * 0.6f, r.top + r.height() * 0.18f, r.right - rad * 0.6f, r.top + r.height() * 0.36f)
             if (hl.width() > 1f) canvas.drawRoundRect(hl, hl.height() / 2, hl.height() / 2, core)
         }
         canvas.restore()
+    }
+
+    /** [c] taken [k] of the way to black. */
+    private fun darken(c: Int, k: Float): Int {
+        fun ch(s: Int) = (((c shr s) and 0xFF) * (1f - k)).toInt()
+        return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
     }
 
     companion object {
