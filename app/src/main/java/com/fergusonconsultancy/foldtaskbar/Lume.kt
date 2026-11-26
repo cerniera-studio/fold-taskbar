@@ -22,7 +22,11 @@ import kotlin.math.abs
 // offers one thing; the icons beside it yield as it grows (Membrane). During a gesture on the bar
 // it shrinks back to a point (Concentrato). After RECEDE_MS without a touch it recedes to a lit
 // point, still holding the moment (Giulietta). Tap acts; swipe it off the bar and it says nothing
-// more about that moment today; hold it and it says why.
+// more about that moment today; hold it and it says plainly what it means, with its one action.
+//
+// 26 Nov 2026: listening is offered only while now playing is off the bar (the thumbnail already
+// is the music's light), and the hold card lost its percentage, "Not today" and "Fluido settings":
+// how sure Senso is belongs in Settings → Fluido, and a swipe already puts a moment away.
 //
 // Rules only, three moments in the pilot: rain coming, leaving soon, listening.
 
@@ -113,7 +117,7 @@ class LumeView(context: Context, private val sizePx: Int, private val vertical: 
 
     private fun describe() {
         val m = Lume.moment
-        contentDescription = if (m == null) "Lume: nothing to say" else "Lume: ${m.kind.label}, ${m.why}. Tap to act, hold for why, swipe away for today"
+        contentDescription = if (m == null) "Lume: nothing to say" else "Lume: ${m.kind.label}, ${m.why}. Tap to act, hold for more, swipe away for today"
     }
 
     override fun onMeasure(w: Int, h: Int) {

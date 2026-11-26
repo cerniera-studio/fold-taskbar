@@ -301,7 +301,7 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
 
     override fun onSharedPreferenceChanged(p: SharedPreferences?, key: String?) {
         if (key == "presence") main.post { restIfTrim(); listenForScrolls() }
-        if (key == "live_music") main.post { liveCheck() }
+        if (key == "live_music") main.post { liveCheck(); fluidoCheck() }
         if (key == Prefs.FLUIDO) main.post { fluidoCheck(); liveCheck() }
         if (key != null && key.startsWith("spia")) main.post { liveCheck(); Spia.listener?.relight() }
         if (key == "riserva_meter" && ::meter.isInitialized) main.post { meter.start() }
@@ -965,11 +965,14 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
     /** Starts or stops Senso with the Fluido switch. Off, the bar behaves as it did before Fluido. */
     fun fluidoCheck() {
         if (Prefs.fluido(this)) {
-            if (senso == null) senso = Senso(this, "Fold Taskbar", Lume.KINDS, injectable = true).also {
+            // Now playing on the bar is the music's own light: Lume leaves listening to it
+            val kinds = lumeKinds()
+            if (senso != null && senso?.kinds != kinds) senso?.let { it.unwatch(sensoChanged); it.stop(); senso = null }
+            if (senso == null) senso = Senso(this, "Fold Taskbar", kinds, injectable = true).also {
                 it.homes(homes)
                 it.watch(sensoChanged)
                 it.start()
-                EventLog.add(this, "Fluido on: Senso listening for ${Lume.KINDS.joinToString { k -> k.label.lowercase() }}")
+                EventLog.add(this, "Fluido on: Senso listening for ${kinds.joinToString { k -> k.label.lowercase() }}")
             }
             feedPlaying()
         } else senso?.let {
@@ -1060,22 +1063,30 @@ class TaskbarService : AccessibilityService(), CapsuleActions, DragListener, Gri
         act(m)
     }
 
+    /**
+     * Hold: what the moment means, in plain words, and its one action. Nothing technical (how sure
+     * Senso is lives in Settings → Fluido and the event log), and no "Not today" (a swipe does that).
+     */
     override fun onLumeHeld(view: View) {
         closePanels()
         val m = Lume.moment ?: return
-        val sure = "${m.percent}% sure · " + m.reasons.joinToString(" · ")
         showMenu(m.kind.label, listOf(
             m.why as CharSequence to { closeMenu(); act(m) },
-            sure as CharSequence to { closeMenu() },
-        ), view, null, listOf(
-            "Not today" as CharSequence to { closeMenu(); dismissLume(m) },
-            "Fluido settings" as CharSequence to {
-                closeMenu()
-                startActivity(Intent(this, MainActivity::class.java).putExtra("open", "fluido").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
-            },
-        ))
-        EventLog.add(this, "Lume: asked why (${m.kind.label.lowercase()})")
+            lumeVerb(m) as CharSequence to { closeMenu(); act(m) },
+        ), view)
+        EventLog.add(this, "Lume: held (${m.kind.label.lowercase()}; ${m.percent}% · ${m.reasons.joinToString(" · ")})")
     }
+
+    /** The one thing a tap does, said as a button would say it. */
+    private fun lumeVerb(m: Moment): String = when (m.kind) {
+        Kind.RAIN_COMING -> "Open Cielo"
+        Kind.LEAVING_SOON -> "Open in calendar"
+        Kind.LISTENING -> if (Lume.paused) "Resume" else "Open the player"
+        else -> "Open"
+    }
+
+    /** Listening is offered only while now playing is off the bar; on it, the thumbnail already says it. */
+    private fun lumeKinds(): Set<Kind> = if (Prefs.liveMusic(this)) Lume.KINDS - Kind.LISTENING else Lume.KINDS
 
     override fun onLumeDismissed(view: View) { Lume.moment?.let { dismissLume(it) } }
 
