@@ -79,6 +79,8 @@ class MainActivity : Activity() {
         if (previewDittico(intent)) return
         // Tests: "lume=on" switches Lume on, as the Fluido switch would (it is off by default)
         intent?.getStringExtra("lume")?.let { Prefs.setFluido(this, it == "on") }
+        // Tests: "music=off" takes now playing off the bar, so Lume may offer listening (26 Nov 2026)
+        intent?.getStringExtra("music")?.let { Prefs.setLiveMusic(this, it == "on") }
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         screen = Screen(this, "Fold Taskbar", "Galaxy Z Fold 8 Ultra")
@@ -335,6 +337,7 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         // Dittico's preview (tests) or Fluido's settings (Lume's menu)
         intent.getStringExtra("lume")?.let { Prefs.setFluido(this, it == "on"); refresh() }
+        intent.getStringExtra("music")?.let { Prefs.setLiveMusic(this, it == "on"); refresh() }
         if (!previewDittico(intent)) openFrom(intent)
     }
 
