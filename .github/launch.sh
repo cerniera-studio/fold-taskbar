@@ -49,8 +49,14 @@ inject "--ez clear true --es at 14:00 --es undismiss all"; sleep 2;             
 inject "--es rain_in 40 --es rain_chance 80"; sleep 1;                                                    shot "10b-lume-rain-offered"; expect rain rain_coming
 sleep 4;                                                                                                  shot "10c-lume-rain-receded"
 inject "--ez clear true --es at 14:00 --es event_in 20 --es event_title Dentist --es event_where 'Park Square'"; sleep 1; shot "10d-lume-leaving-soon"; expect leaving leaving_soon
+# Listening is offered only while now playing is off the bar (26 Nov 2026): with it on, Lume stays at rest
+inject "--ez clear true --es at 14:00 --es playing Teardrop --es artist 'Massive Attack' --es headphones true"; sleep 1; expect listening-with-now-playing none
+adb shell am start -W --activity-clear-top -n $PKG/.MainActivity --es music off >/dev/null; sleep 3
+adb shell input keyevent KEYCODE_HOME; sleep 4
 inject "--ez clear true --es at 14:00 --es playing Teardrop --es artist 'Massive Attack' --es headphones true"; sleep 1; shot "10e-lume-listening"; expect listening listening
 inject "--es dismiss listening"; sleep 1;                                                                 shot "10f-lume-listening-dismissed"; expect dismissed none
+adb shell am start -W --activity-clear-top -n $PKG/.MainActivity --es music on >/dev/null; sleep 3
+adb shell input keyevent KEYCODE_HOME; sleep 4
 inject "--es undismiss all --ez clear true --es at 14:00 --es rain_in 40 --es rain_chance 80"; sleep 4
 size 1568x1503 280
 adb shell input keyevent KEYCODE_HOME; sleep 4
